@@ -1,1 +1,1 @@
-1162_drop_hourly_from_subscription_frequency_choices
+1158_drop_alertconfiguration_is_calculating_column
