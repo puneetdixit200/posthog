@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from typing import Any
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -17,7 +18,6 @@ from posthog.sync import database_sync_to_async
 from products.llm_analytics.backend.models.skills import LLMSkill
 from products.signals.backend.models import SignalAgentConfig
 from products.signals.backend.temporal.agentic.agent_coordinator import (
-    MAX_RUNS_PER_TICK,
     CoordinatorWorkflowInput,
     CoordinatorWorkflowOutput,
     FetchEnabledRunsInput,
