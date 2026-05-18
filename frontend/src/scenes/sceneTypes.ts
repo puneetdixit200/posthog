@@ -116,6 +116,7 @@ export enum Scene {
     Person = 'Person',
     Persons = 'Persons',
     AccountConnected = 'AccountConnected',
+    CredentialReview = 'CredentialReview',
     Pipeline = 'Pipeline',
     PipelineStatus = 'PipelineStatus',
     PipelineNode = 'PipelineNode',
