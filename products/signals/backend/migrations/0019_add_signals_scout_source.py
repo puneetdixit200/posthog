@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
                     ("zendesk", "Zendesk"),
                     ("conversations", "Conversations"),
                     ("error_tracking", "Error tracking"),
-                    ("signals_agent", "Signals agent"),
+                    ("signals_scout", "Signals scout"),
                 ],
                 max_length=100,
             ),
