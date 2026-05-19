@@ -17,8 +17,6 @@ def backfill_credentials_reviewed_at(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    atomic = False
-
     dependencies = [
         ("posthog", "1156_credentials_reviewed_at"),
     ]
