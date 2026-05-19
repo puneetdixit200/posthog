@@ -99,6 +99,7 @@ depends_on = [
     "products.visual_review",
     "products.warehouse_sources_queue",
     "products.web_analytics",
+    "products.wizard",
     "products.workflows",
 ]
 layer = "modules"
