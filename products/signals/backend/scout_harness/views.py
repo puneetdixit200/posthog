@@ -1,4 +1,4 @@
-"""DRF viewsets exposing the Signals agent surface over HTTP for MCP consumption.
+"""DRF viewsets exposing the Signals scout surface over HTTP for MCP consumption.
 
 These wrap the sync Python tools in `scout_harness/tools/` so the headless agent
 (and any other agent on the team's PostHog MCP) can call the `signals-scout-*`

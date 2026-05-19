@@ -1,8 +1,8 @@
-"""Hand-trigger one Signals agent run against a team + skill.
+"""Hand-trigger one Signals scout run against a team + skill.
 
 Used during dogfood to exercise the harness end-to-end without waiting for the
 Temporal scheduler. Inserts a `SignalScoutRun` row, spawns a sandbox, polls until
-the agent finishes, and prints the resulting run id and final message.
+the scout finishes, and prints the resulting run id and final message.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from products.signals.backend.scout_harness.skill_loader import SkillNotFoundErr
 
 
 class Command(BaseCommand):
-    help = "Run one Signals agent scout against the given team using the given skill."
+    help = "Run one Signals scout against the given team using the given skill."
 
     def add_arguments(self, parser):
         parser.add_argument("--team-id", type=int, required=True)

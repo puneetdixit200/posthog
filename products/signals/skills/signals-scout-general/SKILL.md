@@ -12,7 +12,7 @@ description: >
   the team compounds across runs through shared per-team memory; per-product references
   in references/products/ steer attention without prescribing a fixed playbook.
 compatibility: >
-  Designed for the PostHog Signals agent in a Claude sandbox with read-only PostHog MCP
+  Designed for the PostHog Signals scout in a Claude sandbox with read-only PostHog MCP
   scopes (signal_scout:read, llm_skill:read, plus standard analytics reads). Assumes the
   signals-scout MCP family is available: project-profile-get, runs-list, memory-list,
   runs-findings-create, memory-create. The sandbox image bakes the official PostHog skill

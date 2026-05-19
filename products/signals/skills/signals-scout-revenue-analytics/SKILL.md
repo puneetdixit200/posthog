@@ -10,7 +10,7 @@ description: >
   no dependencies on other skills. Picked uniformly at random by the coordinator
   alongside `signals-scout-general` and other specialists.
 compatibility: >
-  Designed for the PostHog Signals agent in a Claude sandbox with read-only PostHog MCP
+  Designed for the PostHog Signals scout in a Claude sandbox with read-only PostHog MCP
   scopes. Assumes the signals-scout MCP family (project-profile-get, runs-list,
   memory-list, runs-findings-create, memory-create) plus warehouse + analytics tools
   (external-data-sources-list, external-data-sync-logs, query-trends, execute-sql,
