@@ -10,14 +10,14 @@ from temporalio.common import RetryPolicy
 
 from posthog.temporal.common.heartbeat import Heartbeater
 
-from products.signals.backend.agent_harness.limits import WORKFLOW_HARD_CEILING_S
-from products.signals.backend.agent_harness.runner import RunResult, arun_signals_agent
+from products.signals.backend.scout_harness.limits import WORKFLOW_HARD_CEILING_S
+from products.signals.backend.scout_harness.runner import RunResult, arun_signals_scout
 
 logger = structlog.get_logger(__name__)
 
 
 @dataclass
-class RunSignalsAgentInput:
+class RunSignalsScoutInput:
     team_id: int
     skill_name: str
     skill_version: int | None = None
@@ -26,7 +26,7 @@ class RunSignalsAgentInput:
 
 
 @dataclass
-class RunSignalsAgentOutput:
+class RunSignalsScoutOutput:
     run_id: str | None
     status: str | None
     runtime_s: float
@@ -35,8 +35,8 @@ class RunSignalsAgentOutput:
     skip_reason: str | None = None
 
 
-def _to_output(result: RunResult) -> RunSignalsAgentOutput:
-    return RunSignalsAgentOutput(
+def _to_output(result: RunResult) -> RunSignalsScoutOutput:
+    return RunSignalsScoutOutput(
         run_id=result.run_id,
         status=result.status.value if result.status is not None else None,
         runtime_s=result.runtime_s,
@@ -47,7 +47,7 @@ def _to_output(result: RunResult) -> RunSignalsAgentOutput:
 
 
 @temporalio.activity.defn
-async def run_signals_agent_activity(input: RunSignalsAgentInput) -> RunSignalsAgentOutput:
+async def run_signals_scout_activity(input: RunSignalsScoutInput) -> RunSignalsScoutOutput:
     """One scheduled scout run for a (team, skill) pair.
 
     The activity itself never raises — failures are persisted on the run row and the
@@ -55,7 +55,7 @@ async def run_signals_agent_activity(input: RunSignalsAgentInput) -> RunSignalsA
     silent" rule: a bad run does not retry blindly.
     """
     async with Heartbeater():
-        result = await arun_signals_agent(
+        result = await arun_signals_scout(
             team_id=input.team_id,
             skill_name=input.skill_name,
             skill_version=input.skill_version,
@@ -63,7 +63,7 @@ async def run_signals_agent_activity(input: RunSignalsAgentInput) -> RunSignalsA
             repository=input.repository,
         )
     logger.info(
-        "signals_agent activity finished",
+        "signals_scout activity finished",
         team_id=input.team_id,
         skill_name=input.skill_name,
         run_id=result.run_id,
@@ -75,7 +75,7 @@ async def run_signals_agent_activity(input: RunSignalsAgentInput) -> RunSignalsA
 
 
 @temporalio.workflow.defn
-class RunSignalsAgentWorkflow:
+class RunSignalsScoutWorkflow:
     """Drives one scheduled scout run.
 
     The activity owns the run-row lifecycle (insert/update). The workflow's job is just
@@ -84,9 +84,9 @@ class RunSignalsAgentWorkflow:
     """
 
     @temporalio.workflow.run
-    async def run(self, input: RunSignalsAgentInput) -> RunSignalsAgentOutput:
+    async def run(self, input: RunSignalsScoutInput) -> RunSignalsScoutOutput:
         return await temporalio.workflow.execute_activity(
-            run_signals_agent_activity,
+            run_signals_scout_activity,
             input,
             start_to_close_timeout=timedelta(seconds=WORKFLOW_HARD_CEILING_S),
             heartbeat_timeout=timedelta(minutes=2),

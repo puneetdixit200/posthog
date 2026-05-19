@@ -15,18 +15,18 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("posthog", "1146_subscription_enabled"),
-        ("signals", "0022_signalagentconfig_runs_per_tick"),
+        ("signals", "0022_signalscoutconfig_runs_per_tick"),
     ]
 
     operations = [
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.AddConstraint(
-                    model_name="signalagentrun",
+                    model_name="signalscoutrun",
                     constraint=models.UniqueConstraint(
                         condition=models.Q(("status", "running")),
                         fields=("team", "skill_name"),
-                        name="signal_agent_run_one_running_per_team_skill",
+                        name="signal_scout_run_one_running_per_team_skill",
                     ),
                 ),
             ],
@@ -34,11 +34,11 @@ class Migration(migrations.Migration):
                 migrations.RunSQL(
                     sql=(
                         "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-                        "signal_agent_run_one_running_per_team_skill "
-                        'ON "signals_signalagentrun" (team_id, skill_name) '
+                        "signal_scout_run_one_running_per_team_skill "
+                        'ON "signals_signalscoutrun" (team_id, skill_name) '
                         "WHERE status = 'running'"
                     ),
-                    reverse_sql=("DROP INDEX CONCURRENTLY IF EXISTS signal_agent_run_one_running_per_team_skill"),
+                    reverse_sql=("DROP INDEX CONCURRENTLY IF EXISTS signal_scout_run_one_running_per_team_skill"),
                 ),
             ],
         ),

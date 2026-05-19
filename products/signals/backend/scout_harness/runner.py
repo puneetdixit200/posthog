@@ -12,11 +12,11 @@ from django.utils import timezone
 from posthog.models.team.team import Team
 from posthog.sync import database_sync_to_async
 
-from products.signals.backend.agent_harness.lazy_seed import sync_canonical_skills
-from products.signals.backend.agent_harness.limits import WORKFLOW_HARD_CEILING_S, RunLimits, resolve_limits
-from products.signals.backend.agent_harness.prompt import SignalAgentRunSummary, build_run_prompt
-from products.signals.backend.agent_harness.skill_loader import LoadedSkill, load_skill_for_run
-from products.signals.backend.models import SignalAgentConfig, SignalAgentRun
+from products.signals.backend.models import SignalScoutConfig, SignalScoutRun
+from products.signals.backend.scout_harness.lazy_seed import sync_canonical_skills
+from products.signals.backend.scout_harness.limits import WORKFLOW_HARD_CEILING_S, RunLimits, resolve_limits
+from products.signals.backend.scout_harness.prompt import SignalScoutRunSummary, build_run_prompt
+from products.signals.backend.scout_harness.skill_loader import LoadedSkill, load_skill_for_run
 from products.signals.backend.temporal.agentic import (
     SIGNALS_REPORT_RESEARCH_ENV_NAME,
     get_or_create_signals_sandbox_env,
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Reuse the report-research sandbox env. Same posture: full repo on disk, restricted
 # network, MCP read scopes injected. Split out later if the agent needs different policy.
-SIGNALS_AGENT_SANDBOX_ENV_NAME = SIGNALS_REPORT_RESEARCH_ENV_NAME
+SIGNALS_SCOUT_SANDBOX_ENV_NAME = SIGNALS_REPORT_RESEARCH_ENV_NAME
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class RunResult:
     """
 
     run_id: str | None
-    status: SignalAgentRun.Status | None
+    status: SignalScoutRun.Status | None
     last_message: str | None
     runtime_s: float
     skill_name: str
@@ -50,7 +50,7 @@ class RunResult:
     skip_reason: str | None = None
 
 
-def run_signals_agent(
+def run_signals_scout(
     *,
     team_id: int,
     skill_name: str,
@@ -62,10 +62,10 @@ def run_signals_agent(
     """Synchronous entrypoint: resolves config, spawns sandbox, persists the run row.
 
     Wraps the async core for callers that aren't inside an event loop (management
-    command, direct script). Temporal activities call `arun_signals_agent` directly.
+    command, direct script). Temporal activities call `arun_signals_scout` directly.
     """
     return asyncio.run(
-        arun_signals_agent(
+        arun_signals_scout(
             team_id=team_id,
             skill_name=skill_name,
             skill_version=skill_version,
@@ -76,7 +76,7 @@ def run_signals_agent(
     )
 
 
-async def arun_signals_agent(
+async def arun_signals_scout(
     *,
     team_id: int,
     skill_name: str,
@@ -88,7 +88,7 @@ async def arun_signals_agent(
     """Async core. Safe to call from inside a running event loop (Temporal activity)."""
     team = await database_sync_to_async(_get_team, thread_sensitive=False)(team_id)
     config = await database_sync_to_async(_resolve_config, thread_sensitive=False)(team)
-    # Sync canonical signals-agent-* skills before we resolve the skill the run asked for.
+    # Sync canonical signals-scout-* skills before we resolve the skill the run asked for.
     # Creates rows for newly-shipped specialists, updates harness-seeded rows the team
     # hasn't edited, and leaves forked / tombstoned rows alone. Failures here should not
     # crash the run — we log and continue with whatever skills the team already has.
@@ -96,7 +96,7 @@ async def arun_signals_agent(
         await database_sync_to_async(sync_canonical_skills, thread_sensitive=False)(team)
     except Exception:
         logger.exception(
-            "signals_agent: canonical skill sync failed; continuing with existing team skills",
+            "signals_scout: canonical skill sync failed; continuing with existing team skills",
             extra={"team_id": team_id},
         )
     skill = await database_sync_to_async(load_skill_for_run, thread_sensitive=False)(
@@ -114,12 +114,12 @@ async def arun_signals_agent(
     # Skip-if-running guard, keyed on (team, skill_name). Different skills for the
     # same team are allowed to run concurrently — `runs_per_tick > 1` relies on this.
     # The check still has a TOCTOU window with the insert below, but the partial
-    # unique index `signal_agent_run_one_running_per_team_skill` makes the DB the
+    # unique index `signal_scout_run_one_running_per_team_skill` makes the DB the
     # source of truth: the second INSERT in a race fails with IntegrityError, which
     # we translate into the same skip path.
     if await database_sync_to_async(_has_running_run, thread_sensitive=False)(team_id, config.id, skill.name):
         logger.info(
-            "signals_agent: skipping trigger, prior run still RUNNING",
+            "signals_scout: skipping trigger, prior run still RUNNING",
             extra={"team_id": team_id, "skill_name": skill.name},
         )
         return RunResult(
@@ -142,7 +142,7 @@ async def arun_signals_agent(
         # to a clean skip so the dispatcher records this as a skipped run rather than
         # a workflow failure.
         logger.info(
-            "signals_agent: skipping trigger, lost insert race to concurrent dispatch",
+            "signals_scout: skipping trigger, lost insert race to concurrent dispatch",
             extra={"team_id": team_id, "skill_name": skill.name},
         )
         return RunResult(
@@ -170,7 +170,7 @@ async def arun_signals_agent(
         )
         return RunResult(
             run_id=str(run.id),
-            status=SignalAgentRun.Status.COMPLETED,
+            status=SignalScoutRun.Status.COMPLETED,
             last_message=last_message,
             runtime_s=runtime_s,
             skill_name=skill.name,
@@ -180,7 +180,7 @@ async def arun_signals_agent(
         runtime_s = time.monotonic() - started
         # Fail safe and silent: persist the failure on the run row, do not retry blindly.
         logger.exception(
-            "signals_agent: run failed",
+            "signals_scout: run failed",
             extra={"team_id": team_id, "run_id": str(run.id), "skill_name": skill.name},
         )
         await database_sync_to_async(_finalize_failed, thread_sensitive=False)(
@@ -192,7 +192,7 @@ async def arun_signals_agent(
         )
         return RunResult(
             run_id=str(run.id),
-            status=SignalAgentRun.Status.FAILED,
+            status=SignalScoutRun.Status.FAILED,
             last_message=None,
             runtime_s=runtime_s,
             skill_name=skill.name,
@@ -206,7 +206,7 @@ async def arun_signals_agent(
         # down" leaves the row at status=running and blocks every subsequent run.
         runtime_s = time.monotonic() - started
         logger.warning(
-            "signals_agent: run cancelled mid-flight, marking row failed",
+            "signals_scout: run cancelled mid-flight, marking row failed",
             extra={
                 "team_id": team_id,
                 "run_id": str(run.id),
@@ -227,7 +227,7 @@ async def arun_signals_agent(
             # let the next coordinator tick's self-heal path catch it. Don't swallow
             # the original cancellation.
             logger.exception(
-                "signals_agent: failed to mark row failed during cancellation; "
+                "signals_scout: failed to mark row failed during cancellation; "
                 "self-heal will reconcile on next coordinator tick",
                 extra={"team_id": team_id, "run_id": str(run.id)},
             )
@@ -237,7 +237,7 @@ async def arun_signals_agent(
 async def _spawn_and_run(
     *,
     team: Team,
-    run: SignalAgentRun,
+    run: SignalScoutRun,
     skill: LoadedSkill,
     limits: RunLimits,
     repository: str | None,
@@ -246,7 +246,7 @@ async def _spawn_and_run(
     user_id = await database_sync_to_async(resolve_user_id_for_team, thread_sensitive=False)(team.id)
     sandbox_env_id = await database_sync_to_async(get_or_create_signals_sandbox_env, thread_sensitive=False)(
         team.id,
-        SIGNALS_AGENT_SANDBOX_ENV_NAME,
+        SIGNALS_SCOUT_SANDBOX_ENV_NAME,
         SandboxEnvironment.NetworkAccessLevel.TRUSTED,
     )
     # `repository` is None on the cadence path — v1 doesn't clone a repo into the
@@ -258,28 +258,28 @@ async def _spawn_and_run(
         user_id=user_id,
         repository=repository,
         sandbox_environment_id=sandbox_env_id,
-        # `signals_agent` is the harness's own scope posture: same scope content as
+        # `signals_scout` is the harness's own scope posture: same scope content as
         # `read_only` (project reads + INTERNAL_SCOPES, including
-        # `signal_agent_internal:write`) but reports `has_write_scopes=True` so the
+        # `signal_scout_internal:write`) but reports `has_write_scopes=True` so the
         # MCP server doesn't enable read-only-mode tool filtering. Without that
         # opt-out, the MCP layer would categorically strip every tool annotated
         # `readOnlyHint: false` — including the agent's own `memory_create`,
         # `memory_delete`, and `runs_findings_create` tools — even though the
         # OAuth token does carry the right scope to call them.
-        posthog_mcp_scopes="signals_agent",
+        posthog_mcp_scopes="signals_scout",
     )
     prompt = build_run_prompt(skill, run_id=str(run.id), team_id=team.id, started_at=run.started_at)
     logger.info(
-        "signals_agent: spawning sandbox",
+        "signals_scout: spawning sandbox",
         extra={"team_id": team.id, "skill_name": skill.name, "skill_version": skill.version},
     )
     session, result = await MultiTurnSession.start(
         prompt=prompt,
         context=context,
-        model=SignalAgentRunSummary,
+        model=SignalScoutRunSummary,
         step_name=_step_name(skill),
         verbose=verbose,
-        origin_product=Task.OriginProduct.SIGNALS_AGENT,
+        origin_product=Task.OriginProduct.SIGNALS_SCOUT,
     )
     # Capture the Tasks (Task, TaskRun) IDs the harness span ran inside immediately
     # after session start so the cross-link is queryable mid-run, survives both the
@@ -306,22 +306,22 @@ def _get_team(team_id: int) -> Team:
     return Team.objects.select_related("organization").get(id=team_id)
 
 
-def _resolve_config(team: Team) -> SignalAgentConfig:
+def _resolve_config(team: Team) -> SignalScoutConfig:
     """Get-or-create the config row. Defaults are safe (enabled=False, shadow_mode=True)."""
-    config, _ = SignalAgentConfig.objects.get_or_create(team=team)
+    config, _ = SignalScoutConfig.objects.get_or_create(team=team)
     return config
 
 
 def _has_running_run(team_id: int, config_id: str, skill_name: str) -> bool:
     # Locked on (team, skill_name) — different skills for the same team are allowed
-    # to fan out, which is the whole point of `runs_per_tick > 1`. `agent_config_id`
+    # to fan out, which is the whole point of `runs_per_tick > 1`. `scout_config_id`
     # is included to keep the filter selective on the per-team RUNNING-status index;
     # the partial unique index in the schema enforces the same shape at the DB layer.
-    return SignalAgentRun.objects.filter(
+    return SignalScoutRun.objects.filter(
         team_id=team_id,
-        agent_config_id=config_id,
+        scout_config_id=config_id,
         skill_name=skill_name,
-        status=SignalAgentRun.Status.RUNNING,
+        status=SignalScoutRun.Status.RUNNING,
     ).exists()
 
 
@@ -349,10 +349,10 @@ def _self_heal_stale_runs(team_id: int, config_id: str) -> None:
 
     Idempotent: safe to call from any number of concurrent coordinator activities.
     """
-    candidates = SignalAgentRun.objects.filter(
+    candidates = SignalScoutRun.objects.filter(
         team_id=team_id,
-        agent_config_id=config_id,
-        status=SignalAgentRun.Status.RUNNING,
+        scout_config_id=config_id,
+        status=SignalScoutRun.Status.RUNNING,
     ).only("id", "started_at", "metadata")
     now = timezone.now()
     threshold_s = _STALE_RUN_MULTIPLIER * WORKFLOW_HARD_CEILING_S
@@ -360,8 +360,8 @@ def _self_heal_stale_runs(team_id: int, config_id: str) -> None:
         age_s = (now - run.started_at).total_seconds()
         if age_s <= threshold_s:
             continue
-        SignalAgentRun.objects.filter(id=run.id, status=SignalAgentRun.Status.RUNNING).update(
-            status=SignalAgentRun.Status.FAILED,
+        SignalScoutRun.objects.filter(id=run.id, status=SignalScoutRun.Status.RUNNING).update(
+            status=SignalScoutRun.Status.FAILED,
             completed_at=now,
             summary=(
                 f"Run row auto-healed: status=RUNNING for {age_s:.0f}s "
@@ -370,7 +370,7 @@ def _self_heal_stale_runs(team_id: int, config_id: str) -> None:
             ),
         )
         logger.warning(
-            "signals_agent: self-healed stale running run",
+            "signals_scout: self-healed stale running run",
             extra={
                 "team_id": team_id,
                 "run_id": str(run.id),
@@ -383,16 +383,16 @@ def _self_heal_stale_runs(team_id: int, config_id: str) -> None:
 def _create_run_row(
     *,
     team: Team,
-    config: SignalAgentConfig,
+    config: SignalScoutConfig,
     skill: LoadedSkill,
     limits: RunLimits,
-) -> SignalAgentRun:
-    return SignalAgentRun.objects.create(
+) -> SignalScoutRun:
+    return SignalScoutRun.objects.create(
         team=team,
-        agent_config=config,
+        scout_config=config,
         skill_name=skill.name,
         skill_version=skill.version,
-        status=SignalAgentRun.Status.RUNNING,
+        status=SignalScoutRun.Status.RUNNING,
         metadata={
             "limits": limits.as_dict(),
             "skill_id": skill.skill_id,
@@ -403,11 +403,11 @@ def _create_run_row(
 
 def _finalize_completed(*, run_id: str, summary: str, runtime_s: float) -> None:
     # Count findings on the row at finalize — emits during the run pushed onto
-    # `findings` via `signals-agent-runs-findings-create`. Reading once here
+    # `findings` via `signals-scout-runs-findings-create`. Reading once here
     # avoids the caller having to thread the count down through the async path.
     findings_count = _read_findings_count(run_id)
-    SignalAgentRun.objects.filter(id=run_id).update(
-        status=SignalAgentRun.Status.COMPLETED,
+    SignalScoutRun.objects.filter(id=run_id).update(
+        status=SignalScoutRun.Status.COMPLETED,
         completed_at=timezone.now(),
         summary=summary,
         run_metrics={"runtime_s": runtime_s, "findings": findings_count},
@@ -422,9 +422,9 @@ def _record_task_linkage(*, run_id: str, task_id: str, task_run_id: str) -> None
     on the same row would race here, but per-run linkage only ever flows from
     one runner invocation, so a plain RMW is safe in practice.
     """
-    existing = SignalAgentRun.objects.filter(id=run_id).values_list("metadata", flat=True).first() or {}
+    existing = SignalScoutRun.objects.filter(id=run_id).values_list("metadata", flat=True).first() or {}
     merged = {**existing, "task_id": task_id, "task_run_id": task_run_id}
-    SignalAgentRun.objects.filter(id=run_id).update(metadata=merged)
+    SignalScoutRun.objects.filter(id=run_id).update(metadata=merged)
 
 
 def _finalize_failed(
@@ -441,7 +441,7 @@ def _finalize_failed(
     # keys the run accreted while annotating with the failure reason. Writing
     # a fresh dict here would silently drop the deep-link to the sandbox that
     # actually died — exactly the row a debugger needs to land on.
-    existing = SignalAgentRun.objects.filter(id=run_id).values_list("metadata", flat=True).first() or {}
+    existing = SignalScoutRun.objects.filter(id=run_id).values_list("metadata", flat=True).first() or {}
     merged = {
         **existing,
         "limits": limits.as_dict(),
@@ -449,8 +449,8 @@ def _finalize_failed(
         "allowed_tools": skill.allowed_tools_resolution.as_dict(),
         "error_type": type(exc).__name__,
     }
-    SignalAgentRun.objects.filter(id=run_id).update(
-        status=SignalAgentRun.Status.FAILED,
+    SignalScoutRun.objects.filter(id=run_id).update(
+        status=SignalScoutRun.Status.FAILED,
         completed_at=timezone.now(),
         summary=f"Run failed: {exc!s}",
         run_metrics={"runtime_s": runtime_s, "findings": findings_count},
@@ -459,11 +459,11 @@ def _finalize_failed(
 
 
 def _read_findings_count(run_id: str) -> int:
-    findings = SignalAgentRun.objects.filter(id=run_id).values_list("findings", flat=True).first() or []
+    findings = SignalScoutRun.objects.filter(id=run_id).values_list("findings", flat=True).first() or []
     return len(findings)
 
 
-def _limits_for_run(config: SignalAgentConfig, overrides: dict[str, Any] | None) -> RunLimits:
+def _limits_for_run(config: SignalScoutConfig, overrides: dict[str, Any] | None) -> RunLimits:
     # Three-level merge: harness defaults < per-team config < caller-provided overrides.
     # Merging at the dict layer (not via two stacked `resolve_limits` calls) keeps a
     # caller's `max_runtime_s=900` override from silently dropping the team's
@@ -475,4 +475,4 @@ def _limits_for_run(config: SignalAgentConfig, overrides: dict[str, Any] | None)
 def _step_name(skill: LoadedSkill) -> str:
     # Surfaces in the Task title and S3 log prefix. Keep terse — the sandbox truncates.
     safe = skill.name.replace(" ", "_")[:40]
-    return f"signals_agent:{safe}"
+    return f"signals_scout:{safe}"

@@ -27,6 +27,7 @@ from products.dashboards.backend.models.dashboard import Dashboard
 from products.data_warehouse.backend.models.external_data_source import ExternalDataSource
 from products.experiments.backend.models.experiment import Experiment
 from products.notebooks.backend.models import Notebook
+from products.signals.backend.models import SignalProjectProfile, SignalReport, SignalSourceConfig
 from products.signals.backend.scout_harness.profile import INVENTORY_SOURCE_VERSION, build_inventory
 from products.signals.backend.scout_harness.profile.builders import (
     RECENT_ACTIVITY_WINDOW_DAYS,
@@ -54,7 +55,6 @@ from products.signals.backend.scout_harness.tools.profile import (
     compute_project_profile,
     get_project_profile,
 )
-from products.signals.backend.models import SignalProjectProfile, SignalReport, SignalSourceConfig
 from products.surveys.backend.models import Survey
 
 

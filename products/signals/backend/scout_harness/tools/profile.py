@@ -24,8 +24,8 @@ from django.utils import timezone
 
 from posthog.models.team.team import Team
 
-from products.signals.backend.scout_harness.profile import INVENTORY_SOURCE_VERSION, build_inventory
 from products.signals.backend.models import SignalProjectProfile
+from products.signals.backend.scout_harness.profile import INVENTORY_SOURCE_VERSION, build_inventory
 
 # Soft cache TTL — `get_project_profile` recomputes when the newest row is older than this.
 # Aligned to the coordinator tick (60min in prod, 15min in dev) so an active team's
