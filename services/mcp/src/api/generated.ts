@@ -32,20 +32,6 @@ export namespace Schemas {
     } as const;
 
     /**
-     * * `read_write` - read_write
-    * `read` - read
-    * `none` - none
-     */
-    export type AccessLevelEnum = typeof AccessLevelEnum[keyof typeof AccessLevelEnum];
-
-
-    export const AccessLevelEnum = {
-      ReadWrite: 'read_write',
-      Read: 'read',
-      None: 'none',
-    } as const;
-
-    /**
      * * `warehouse` - warehouse
     * `direct` - direct
      */
@@ -56,53 +42,6 @@ export namespace Schemas {
       Warehouse: 'warehouse',
       Direct: 'direct',
     } as const;
-
-    /**
-     * Typed account properties: assignment fields (csm, account_executive, account_owner). Defaults to an empty object. Unknown keys are rejected.
-     * @nullable
-     */
-    export type AccountProperties = {
-      /** @nullable */
-      csm?: {
-      id: number;
-      email: string;
-    } | null;
-      /** @nullable */
-      account_executive?: {
-      id: number;
-      email: string;
-    } | null;
-      /** @nullable */
-      account_owner?: {
-      id: number;
-      email: string;
-    } | null;
-    } | null;
-
-    export interface Account {
-      readonly id: string;
-      /**
-         * Human-readable name of the account.
-         * @maxLength 400
-         */
-      name: string;
-      /**
-         * Identifier for the account in an external system (e.g. CRM ID). Optional.
-         * @maxLength 400
-         * @nullable
-         */
-      external_id?: string | null;
-      /**
-         * Typed account properties: assignment fields (csm, account_executive, account_owner). Defaults to an empty object. Unknown keys are rejected.
-         * @nullable
-         */
-      properties?: AccountProperties;
-      readonly created_at: string;
-      /** @nullable */
-      readonly created_by: number | null;
-      /** @nullable */
-      readonly updated_at: string | null;
-    }
 
     /**
      * * `event` - event
@@ -19999,12 +19938,6 @@ export namespace Schemas {
       cohorts: LocalEvaluationResponseCohorts;
     }
 
-    export interface LogsAlertFilters {
-      filterGroup?: PropertyGroupFilter | null;
-      serviceNames?: string[] | null;
-      severityLevels?: LogSeverityLevel[] | null;
-    }
-
     /**
      * * `above` - Above
     * `below` - Below
@@ -20078,7 +20011,7 @@ export namespace Schemas {
       /** Whether the alert is actively being evaluated. Disabling resets the state to not_firing. */
       enabled?: boolean;
       /** Filter criteria — subset of LogsViewerFilters. Must contain at least one of: severityLevels (list of severity strings), serviceNames (list of service name strings), or filterGroup (property filter group object). May be empty on draft alerts (enabled=false). */
-      filters?: LogsAlertFilters;
+      filters?: unknown;
       /**
          * Number of matching log entries that constitutes a threshold breach within the evaluation window. Defaults to 100.
          * @minimum 1
@@ -20249,7 +20182,7 @@ export namespace Schemas {
 
     export interface LogsAlertSimulateRequest {
       /** Filter criteria — same format as LogsAlertConfiguration.filters. */
-      filters: LogsAlertFilters;
+      filters: unknown;
       /**
          * Threshold count to evaluate against.
          * @minimum 1
@@ -20356,7 +20289,7 @@ export namespace Schemas {
       scope_path_pattern?: string | null;
       /** Optional list of predicates over string attributes, e.g. [{"key":"http.route","op":"eq","value":"/api"}]. */
       scope_attribute_filters?: LogsSamplingRuleScopeAttributeFiltersItem[];
-      /** Type-specific JSON. For path_drop: object with optional `filter_group` (PropertyGroupFilter shape — AND/OR tree of property predicates evaluated per record) and/or legacy `patterns` (list of regex strings) + `match_attribute_key` (string). When both are present a record is dropped if EITHER matches. Filter group example: `{"type":"AND","values":[{"type":"AND","values":[{"key":"service.name","operator":"exact","value":"api"}]}]}`. For severity_sampling: object with `actions` per severity level and optional `always_keep`. For rate_limit: object with required `logs_per_second` (integer 1–1000000) and optional `burst_logs` (integer ≥ logs_per_second, max 60000000); rate_limit rules require non-null `scope_service` matching `service.name` on each log line. */
+      /** Type-specific JSON. For path_drop: object with required `patterns` (list of regex strings) and optional `match_attribute_key` (string). When `match_attribute_key` is omitted or empty, patterns match the same virtual path string as ingestion (url.path, http.path, http.route, path). When set, each pattern is tested only against that string attribute on the log record. For severity_sampling: object with `actions` per severity level and optional `always_keep`. For rate_limit: object with required `logs_per_second` (integer 1–1000000) and optional `burst_logs` (integer ≥ logs_per_second, max 60000000); rate_limit rules require non-null `scope_service` matching `service.name` on each log line. */
       config: unknown;
       /** Incremented on each update for worker cache coherency. */
       readonly version: number;
@@ -20711,8 +20644,7 @@ export namespace Schemas {
     }
 
     /**
-     * * `PENDING` - Pending
-    * `BACKFILL` - Backfill
+     * * `BACKFILL` - Backfill
     * `READY` - Ready
     * `ERROR` - Error
      */
@@ -20720,7 +20652,6 @@ export namespace Schemas {
 
 
     export const MaterializedColumnSlotStateEnum = {
-      Pending: 'PENDING',
       Backfill: 'BACKFILL',
       Ready: 'READY',
       Error: 'ERROR',
@@ -20731,18 +20662,18 @@ export namespace Schemas {
       team: number;
       property_definition: string;
       readonly property_definition_details: PropertyDefinition;
+      property_type: PropertyDefinitionTypeEnum;
       /**
          * @minimum 0
          * @maximum 32767
-         * @nullable
          */
-      slot_index?: number | null;
+      slot_index: number;
       state?: MaterializedColumnSlotStateEnum;
       /**
          * @maxLength 400
          * @nullable
          */
-      backfill_temporal_run_id?: string | null;
+      backfill_temporal_workflow_id?: string | null;
       /** @nullable */
       error_message?: string | null;
       readonly created_at: string;
@@ -21591,15 +21522,6 @@ export namespace Schemas {
       Healthy: 'healthy',
       NeedsAttention: 'needs_attention',
     } as const;
-
-    export interface PaginatedAccountList {
-      count: number;
-      /** @nullable */
-      next?: string | null;
-      /** @nullable */
-      previous?: string | null;
-      results: Account[];
-    }
 
     export interface PaginatedActionList {
       count: number;
@@ -25354,50 +25276,78 @@ export namespace Schemas {
     }
 
     /**
-     * Typed account properties: assignment fields (csm, account_executive, account_owner). Defaults to an empty object. Unknown keys are rejected.
-     * @nullable
+     * * `idle` - idle
+    * `running` - running
+    * `completed` - completed
+    * `error` - error
      */
-    export type PatchedAccountProperties = {
-      /** @nullable */
-      csm?: {
-      id: number;
-      email: string;
-    } | null;
-      /** @nullable */
-      account_executive?: {
-      id: number;
-      email: string;
-    } | null;
-      /** @nullable */
-      account_owner?: {
-      id: number;
-      email: string;
-    } | null;
-    } | null;
+    export type RunPhaseEnum = typeof RunPhaseEnum[keyof typeof RunPhaseEnum];
 
-    export interface PatchedAccount {
-      readonly id?: string;
-      /**
-         * Human-readable name of the account.
-         * @maxLength 400
-         */
-      name?: string;
-      /**
-         * Identifier for the account in an external system (e.g. CRM ID). Optional.
-         * @maxLength 400
-         * @nullable
-         */
-      external_id?: string | null;
-      /**
-         * Typed account properties: assignment fields (csm, account_executive, account_owner). Defaults to an empty object. Unknown keys are rejected.
-         * @nullable
-         */
-      properties?: PatchedAccountProperties;
-      readonly created_at?: string;
+
+    export const RunPhaseEnum = {
+      Idle: 'idle',
+      Running: 'running',
+      Completed: 'completed',
+      Error: 'error',
+    } as const;
+
+    /**
+     * * `pending` - pending
+    * `in_progress` - in_progress
+    * `completed` - completed
+    * `failed` - failed
+    * `canceled` - canceled
+     */
+    export type WizardTaskStatusEnum = typeof WizardTaskStatusEnum[keyof typeof WizardTaskStatusEnum];
+
+
+    export const WizardTaskStatusEnum = {
+      Pending: 'pending',
+      InProgress: 'in_progress',
+      Completed: 'completed',
+      Failed: 'failed',
+      Canceled: 'canceled',
+    } as const;
+
+    export interface WizardTask {
+      /** Stable identifier the wizard assigned to this task. Used to track lifecycle across pushes. */
+      id: string;
+      /** Human-readable title of the task. Should be updated if the task's purpose changes, but can remain the same if only the status changes. */
+      title: string;
+      /** Current lifecycle stage of the task.
+
+      * `pending` - pending
+      * `in_progress` - in_progress
+      * `completed` - completed
+      * `failed` - failed
+      * `canceled` - canceled */
+      status: WizardTaskStatusEnum;
+    }
+
+    export interface WizardSession {
+      /** @maxLength 255 */
+      session_id: string;
+      readonly team_id: number;
+      /** @maxLength 255 */
+      workflow_id: string;
+      /** @maxLength 255 */
+      skill_id: string;
+      started_at: string;
+      run_phase: RunPhaseEnum;
+      tasks: WizardTask[];
+      event_plan?: unknown;
+      error?: unknown;
+      readonly created_at: string;
+      readonly updated_at: string;
+    }
+
+    export interface PaginatedWizardSessionList {
+      count: number;
       /** @nullable */
-      readonly created_by?: number | null;
+      next?: string | null;
       /** @nullable */
-      readonly updated_at?: string | null;
+      previous?: string | null;
+      results: WizardSession[];
     }
 
     /**
@@ -27685,7 +27635,7 @@ export namespace Schemas {
       /** Whether the alert is actively being evaluated. Disabling resets the state to not_firing. */
       enabled?: boolean;
       /** Filter criteria — subset of LogsViewerFilters. Must contain at least one of: severityLevels (list of severity strings), serviceNames (list of service name strings), or filterGroup (property filter group object). May be empty on draft alerts (enabled=false). */
-      filters?: LogsAlertFilters;
+      filters?: unknown;
       /**
          * Number of matching log entries that constitutes a threshold breach within the evaluation window. Defaults to 100.
          * @minimum 1
@@ -27810,7 +27760,7 @@ export namespace Schemas {
       scope_path_pattern?: string | null;
       /** Optional list of predicates over string attributes, e.g. [{"key":"http.route","op":"eq","value":"/api"}]. */
       scope_attribute_filters?: PatchedLogsSamplingRuleScopeAttributeFiltersItem[];
-      /** Type-specific JSON. For path_drop: object with optional `filter_group` (PropertyGroupFilter shape — AND/OR tree of property predicates evaluated per record) and/or legacy `patterns` (list of regex strings) + `match_attribute_key` (string). When both are present a record is dropped if EITHER matches. Filter group example: `{"type":"AND","values":[{"type":"AND","values":[{"key":"service.name","operator":"exact","value":"api"}]}]}`. For severity_sampling: object with `actions` per severity level and optional `always_keep`. For rate_limit: object with required `logs_per_second` (integer 1–1000000) and optional `burst_logs` (integer ≥ logs_per_second, max 60000000); rate_limit rules require non-null `scope_service` matching `service.name` on each log line. */
+      /** Type-specific JSON. For path_drop: object with required `patterns` (list of regex strings) and optional `match_attribute_key` (string). When `match_attribute_key` is omitted or empty, patterns match the same virtual path string as ingestion (url.path, http.path, http.route, path). When set, each pattern is tested only against that string attribute on the log record. For severity_sampling: object with `actions` per severity level and optional `always_keep`. For rate_limit: object with required `logs_per_second` (integer 1–1000000) and optional `burst_logs` (integer ≥ logs_per_second, max 60000000); rate_limit rules require non-null `scope_service` matching `service.name` on each log line. */
       config?: unknown;
       /** Incremented on each update for worker cache coherency. */
       readonly version?: number;
@@ -27850,18 +27800,18 @@ export namespace Schemas {
       team?: number;
       property_definition?: string;
       readonly property_definition_details?: PropertyDefinition;
+      property_type?: PropertyDefinitionTypeEnum;
       /**
          * @minimum 0
          * @maximum 32767
-         * @nullable
          */
-      slot_index?: number | null;
+      slot_index?: number;
       state?: MaterializedColumnSlotStateEnum;
       /**
          * @maxLength 400
          * @nullable
          */
-      backfill_temporal_run_id?: string | null;
+      backfill_temporal_workflow_id?: string | null;
       /** @nullable */
       error_message?: string | null;
       readonly created_at?: string;
@@ -30968,6 +30918,23 @@ export namespace Schemas {
       variants?: unknown;
     }
 
+    export interface PatchedWizardSession {
+      /** @maxLength 255 */
+      session_id?: string;
+      readonly team_id?: number;
+      /** @maxLength 255 */
+      workflow_id?: string;
+      /** @maxLength 255 */
+      skill_id?: string;
+      started_at?: string;
+      run_phase?: RunPhaseEnum;
+      tasks?: WizardTask[];
+      event_plan?: unknown;
+      error?: unknown;
+      readonly created_at?: string;
+      readonly updated_at?: string;
+    }
+
     export interface PauseResponse {
       /** Always 'paused'. */
       status: string;
@@ -31965,72 +31932,6 @@ export namespace Schemas {
       * `OR` - OR */
       type?: PropertyGroupOperator;
       values: PropertyItem[];
-    }
-
-    /**
-     * Serializes a single access control rule DTO.
-     */
-    export interface PropertyAccessControlRule {
-      readonly id: string;
-      /** The access level for this rule.
-
-      * `read_write` - read_write
-      * `read` - read
-      * `none` - none */
-      access_level: AccessLevelEnum;
-      /**
-         * The organization member UUID this rule applies to, if any.
-         * @nullable
-         */
-      organization_member: string | null;
-      /**
-         * The role UUID this rule applies to, if any.
-         * @nullable
-         */
-      role: string | null;
-      /** @nullable */
-      readonly created_by: number | null;
-      readonly created_at: string;
-      readonly updated_at: string;
-    }
-
-    /**
-     * Serializes the aggregate state for a property definition.
-
-    Preserves the existing API shape: ``access_controls`` is the list
-    of rules, plus the available levels and the computed default.
-     */
-    export interface PropertyAccessControlState {
-      /** List of all access control rules for this property definition. */
-      access_controls: PropertyAccessControlRule[];
-      /** Available access levels that can be assigned. */
-      available_access_levels: string[];
-      /** The default access level when no rules match. */
-      default_access_level: string;
-    }
-
-    /**
-     * Request body for upserting a rule (create or update).
-     */
-    export interface PropertyAccessControlUpdate {
-      /** The property definition ID this rule applies to. */
-      property_definition_id: string;
-      /** The access level to set for this rule.
-
-      * `read_write` - read_write
-      * `read` - read
-      * `none` - none */
-      access_level: AccessLevelEnum;
-      /**
-         * The organization member UUID to set an override for.
-         * @nullable
-         */
-      organization_member?: string | null;
-      /**
-         * The role UUID to set an override for.
-         * @nullable
-         */
-      role?: string | null;
     }
 
     export type PropertyType = typeof PropertyType[keyof typeof PropertyType];
@@ -39374,17 +39275,6 @@ export namespace Schemas {
     search?: string;
     };
 
-    export type AccountsListParams = {
-    /**
-     * Number of results to return per page.
-     */
-    limit?: number;
-    /**
-     * The initial index from which to return the results.
-     */
-    offset?: number;
-    };
-
     export type ApprovalPoliciesListParams = {
     /**
      * Number of results to return per page.
@@ -40277,28 +40167,6 @@ export namespace Schemas {
      * Filter by recipient target type (e.g. `user`, `team`)
      */
     target_type?: string;
-    };
-
-    export type PropertyAccessControlsRetrieveParams = {
-    /**
-     * The property definition ID to fetch access control rules for.
-     */
-    property_definition_id: string;
-    };
-
-    export type PropertyAccessControlsDestroyParams = {
-    /**
-     * The organization member UUID whose override should be deleted.
-     */
-    organization_member?: string;
-    /**
-     * The property definition ID the rule applies to.
-     */
-    property_definition_id: string;
-    /**
-     * The role UUID whose override should be deleted.
-     */
-    role?: string;
     };
 
     export type QuickFiltersListParams = {
@@ -45216,6 +45084,17 @@ export namespace Schemas {
     offset?: number;
     };
 
+    export type WizardSessionsListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
+    };
+
     export type PublicHogFunctionTemplatesListParams = {
     /**
      * Number of results to return per page.
@@ -45302,6 +45181,17 @@ export namespace Schemas {
      * Optional case-insensitive repository name search query.
      */
     search?: string;
+    };
+
+    export type WizardListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
     };
 
 
