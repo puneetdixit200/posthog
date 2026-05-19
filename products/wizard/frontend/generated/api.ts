@@ -8,7 +8,12 @@ import { apiMutator } from '../../../../frontend/src/lib/api-orval-mutator'
  * PostHog API - generated
  * OpenAPI spec version: 1.0.0
  */
-import type { PaginatedWizardSessionListApi, WizardSessionApi, WizardSessionsListParams } from './api.schemas'
+import type {
+    PaginatedWizardSessionListApi,
+    WizardSessionApi,
+    WizardSessionsListParams,
+    WizardSessionsStreamRetrieveParams,
+} from './api.schemas'
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B
@@ -90,6 +95,36 @@ export const wizardSessionsRetrieve = async (
     options?: RequestInit
 ): Promise<WizardSessionApi> => {
     return apiMutator<WizardSessionApi>(getWizardSessionsRetrieveUrl(projectId, sessionId), {
+        ...options,
+        method: 'GET',
+    })
+}
+
+export const getWizardSessionsStreamRetrieveUrl = (projectId: string, params: WizardSessionsStreamRetrieveParams) => {
+    const normalizedParams = new URLSearchParams()
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined) {
+            normalizedParams.append(key, value === null ? 'null' : value.toString())
+        }
+    })
+
+    const stringifiedParams = normalizedParams.toString()
+
+    return stringifiedParams.length > 0
+        ? `/api/projects/${projectId}/wizard_sessions/stream/?${stringifiedParams}`
+        : `/api/projects/${projectId}/wizard_sessions/stream/`
+}
+
+/**
+ * Server-Sent Events stream of wizard session updates for a (workflow_id, skill_id) pair. On connect, the current latest session (if any) is emitted as the first event; subsequent upserts are streamed in real time.
+ */
+export const wizardSessionsStreamRetrieve = async (
+    projectId: string,
+    params: WizardSessionsStreamRetrieveParams,
+    options?: RequestInit
+): Promise<string> => {
+    return apiMutator<string>(getWizardSessionsStreamRetrieveUrl(projectId, params), {
         ...options,
         method: 'GET',
     })
