@@ -28,9 +28,11 @@ import {
 const DEFAULT_THRESHOLD = 0.95
 
 /** Default window size based on how often the alert checks.
- *  Hourly: 168 (7 days), Daily: 90, Weekly: 26 (6 months), Monthly: 12 (1 year). */
+ *  15-minute: 192 (48 hours), Hourly: 168 (7 days), Daily: 90, Weekly: 26 (6 months), Monthly: 12 (1 year). */
 export function getDefaultWindow(interval?: AlertCalculationInterval): number {
     switch (interval) {
+        case AlertCalculationInterval.EVERY_15_MINUTES:
+            return 192
         case AlertCalculationInterval.HOURLY:
             return 168
         case AlertCalculationInterval.WEEKLY:
