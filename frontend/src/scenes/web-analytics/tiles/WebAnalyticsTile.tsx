@@ -985,10 +985,10 @@ export const WebStatsTableTile = ({
             if (breakdownBy === WebStatsBreakdown.Viewport && breakdownValue) {
                 const [width, height] = breakdownValue.split('x')
                 if (width) {
-                    togglePropertyFilter(PropertyFilterType.Event, '$viewport_width', Number(width))
+                    togglePropertyFilter(PropertyFilterType.Event, '$viewport_width', width)
                 }
                 if (height) {
-                    togglePropertyFilter(PropertyFilterType.Event, '$viewport_height', Number(height))
+                    togglePropertyFilter(PropertyFilterType.Event, '$viewport_height', height)
                 }
                 return
             }
