@@ -651,7 +651,7 @@ describe('Tool Filtering - Feature Flags', () => {
                 'user-interviews',
             ])
         )
-        expect(flags).toHaveLength(5)
+        expect(flags).toHaveLength(6)
     })
 
     // Test the filtering logic with a direct unit test approach using

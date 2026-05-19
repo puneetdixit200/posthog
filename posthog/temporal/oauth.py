@@ -100,14 +100,17 @@ def resolve_scopes(scopes: PosthogMcpScopes = "read_only", *, include_internal_s
     internal = list(INTERNAL_SCOPES) if include_internal_scopes else []
     if isinstance(scopes, str):
         if scopes == "full":
-            return [*MCP_READ_SCOPES, *MCP_WRITE_SCOPES, *internal]
-        # "read_only" and "signals_scout" share the same scope content (reads + internal).
-        # The difference is in `has_write_scopes`: "signals_scout" reports True so the MCP
-        # server doesn't enable read-only mode, which would otherwise filter out the
-        # agent's own internal-write tools (`signal_scout_internal:write` is annotated as
-        # not-read-only and would be stripped by the read-only filter regardless of scope).
-        return [*MCP_READ_SCOPES, *internal]
-    return [*scopes, *internal]
+            resolved = [*MCP_READ_SCOPES, *MCP_WRITE_SCOPES, *internal]
+        else:
+            # "read_only" and "signals_scout" share the same scope content (reads + internal).
+            # The difference is in `has_write_scopes`: "signals_scout" reports True so the MCP
+            # server doesn't enable read-only mode, which would otherwise filter out the
+            # agent's own internal-write tools (`signal_scout_internal:write` is annotated as
+            # not-read-only and would be stripped by the read-only filter regardless of scope).
+            resolved = [*MCP_READ_SCOPES, *internal]
+    else:
+        resolved = [*scopes, *internal]
+    return list(dict.fromkeys(resolved))
 
 
 def has_write_scopes(scopes: PosthogMcpScopes) -> bool:
