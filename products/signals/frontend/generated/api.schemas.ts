@@ -504,7 +504,7 @@ export interface SignalUserAutonomyConfigApi {
     readonly updated_at: string
 }
 
-export type SignalsScoutMemoryListParams = {
+export type SignalsAgentMemoryListParams = {
     /**
      * Include expired `agent_inference` entries (default false). Use for audit/debug only.
      */
@@ -529,7 +529,7 @@ export type SignalsScoutMemoryListParams = {
     text?: string
 }
 
-export type SignalsScoutRunsListParams = {
+export type SignalsAgentRunsListParams = {
     /**
      * Max rows to return (default 20, hard cap 100).
      * @minimum 1
