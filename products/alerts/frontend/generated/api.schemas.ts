@@ -381,7 +381,8 @@ export type DetectorConfigApi =
     | PCADetectorConfigApi
 
 /**
- * * `hourly` - hourly
+ * * `every_15_minutes` - every_15_minutes
+ * `hourly` - hourly
  * `daily` - daily
  * `weekly` - weekly
  * `monthly` - monthly
@@ -389,6 +390,7 @@ export type DetectorConfigApi =
 export type CalculationIntervalEnumApi = (typeof CalculationIntervalEnumApi)[keyof typeof CalculationIntervalEnumApi]
 
 export const CalculationIntervalEnumApi = {
+    Every15Minutes: 'every_15_minutes',
     Hourly: 'hourly',
     Daily: 'daily',
     Weekly: 'weekly',
@@ -453,8 +455,9 @@ export interface AlertApi {
     /** Trends-specific alert configuration. Includes series_index (which series to monitor) and check_ongoing_interval (whether to check the current incomplete interval). */
     config?: TrendsAlertConfigApi | null
     detector_config?: DetectorConfigApi | null
-    /** How often the alert is checked: hourly, daily, weekly, or monthly.
+    /** How often the alert is checked: every 15 minutes (Boost+), hourly, daily, weekly, or monthly.
 
+  * `every_15_minutes` - every_15_minutes
   * `hourly` - hourly
   * `daily` - daily
   * `weekly` - weekly
@@ -531,8 +534,9 @@ export interface PatchedAlertApi {
     /** Trends-specific alert configuration. Includes series_index (which series to monitor) and check_ongoing_interval (whether to check the current incomplete interval). */
     config?: TrendsAlertConfigApi | null
     detector_config?: DetectorConfigApi | null
-    /** How often the alert is checked: hourly, daily, weekly, or monthly.
+    /** How often the alert is checked: every 15 minutes (Boost+), hourly, daily, weekly, or monthly.
 
+  * `every_15_minutes` - every_15_minutes
   * `hourly` - hourly
   * `daily` - daily
   * `weekly` - weekly

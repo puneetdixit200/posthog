@@ -3955,7 +3955,8 @@ export namespace Schemas {
     export type DetectorConfig = EnsembleDetectorConfig | ZScoreDetectorConfig | MADDetectorConfig | IQRDetectorConfig | ThresholdDetectorConfig | ECODDetectorConfig | COPODDetectorConfig | IsolationForestDetectorConfig | KNNDetectorConfig | HBOSDetectorConfig | LOFDetectorConfig | OCSVMDetectorConfig | PCADetectorConfig;
 
     /**
-     * * `hourly` - hourly
+     * * `every_15_minutes` - every_15_minutes
+    * `hourly` - hourly
     * `daily` - daily
     * `weekly` - weekly
     * `monthly` - monthly
@@ -3964,6 +3965,7 @@ export namespace Schemas {
 
 
     export const CalculationIntervalEnum = {
+      Every15Minutes: 'every_15_minutes',
       Hourly: 'hourly',
       Daily: 'daily',
       Weekly: 'weekly',
@@ -4028,8 +4030,9 @@ export namespace Schemas {
       /** Trends-specific alert configuration. Includes series_index (which series to monitor) and check_ongoing_interval (whether to check the current incomplete interval). */
       config?: TrendsAlertConfig | null;
       detector_config?: DetectorConfig | null;
-      /** How often the alert is checked: hourly, daily, weekly, or monthly.
+      /** How often the alert is checked: every 15 minutes (Boost+), hourly, daily, weekly, or monthly.
 
+      * `every_15_minutes` - every_15_minutes
       * `hourly` - hourly
       * `daily` - daily
       * `weekly` - weekly
@@ -25362,8 +25365,9 @@ export namespace Schemas {
       /** Trends-specific alert configuration. Includes series_index (which series to monitor) and check_ongoing_interval (whether to check the current incomplete interval). */
       config?: TrendsAlertConfig | null;
       detector_config?: DetectorConfig | null;
-      /** How often the alert is checked: hourly, daily, weekly, or monthly.
+      /** How often the alert is checked: every 15 minutes (Boost+), hourly, daily, weekly, or monthly.
 
+      * `every_15_minutes` - every_15_minutes
       * `hourly` - hourly
       * `daily` - daily
       * `weekly` - weekly
