@@ -849,7 +849,6 @@ export type ActivityLogListParams = {
 * `Experiment` - Experiment
 * `ExperimentHoldout` - ExperimentHoldout
 * `ExperimentSavedMetric` - ExperimentSavedMetric
-* `ExperimentToSavedMetric` - ExperimentToSavedMetric
 * `Survey` - Survey
 * `EarlyAccessFeature` - EarlyAccessFeature
 * `SessionRecordingPlaylist` - SessionRecordingPlaylist
@@ -924,7 +923,6 @@ export const ActivityLogListScope = {
     Experiment: 'Experiment',
     ExperimentHoldout: 'ExperimentHoldout',
     ExperimentSavedMetric: 'ExperimentSavedMetric',
-    ExperimentToSavedMetric: 'ExperimentToSavedMetric',
     Survey: 'Survey',
     EarlyAccessFeature: 'EarlyAccessFeature',
     SessionRecordingPlaylist: 'SessionRecordingPlaylist',
@@ -986,7 +984,6 @@ export const ActivityLogListScope = {
  * `Experiment` - Experiment
  * `ExperimentHoldout` - ExperimentHoldout
  * `ExperimentSavedMetric` - ExperimentSavedMetric
- * `ExperimentToSavedMetric` - ExperimentToSavedMetric
  * `Survey` - Survey
  * `EarlyAccessFeature` - EarlyAccessFeature
  * `SessionRecordingPlaylist` - SessionRecordingPlaylist
@@ -1049,7 +1046,6 @@ export const ActivityLogListScopesItem = {
     Experiment: 'Experiment',
     ExperimentHoldout: 'ExperimentHoldout',
     ExperimentSavedMetric: 'ExperimentSavedMetric',
-    ExperimentToSavedMetric: 'ExperimentToSavedMetric',
     Survey: 'Survey',
     EarlyAccessFeature: 'EarlyAccessFeature',
     SessionRecordingPlaylist: 'SessionRecordingPlaylist',
