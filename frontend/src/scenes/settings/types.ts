@@ -63,7 +63,6 @@ export type SettingSectionId =
     | 'organization-security'
     | 'environment-approvals'
     | 'organization-danger-zone'
-    | 'organization-ai'
     | 'organization-billing'
     | 'organization-legal-documents'
     | 'organization-startup-program'

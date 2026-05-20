@@ -1482,35 +1482,29 @@ export const SETTINGS_MAP: SettingSection[] = [
                     'PostHog AI features use external AI services for data analysis. This can involve transfer of identifying user data.',
             },
             {
-                id: 'organization-ip-anonymization-default',
-                title: 'IP data capture default',
-                description:
-                    'When enabled, new projects will automatically have "Discard client IP data" turned on. This is recommended for GDPR compliance. Existing projects are not affected.',
-                component: <OrgIPAnonymizationDefault />,
-                keywords: ['ip', 'anonymize', 'gdpr', 'privacy', 'geolocation'],
-            },
-        ],
-    },
-    {
-        level: 'organization',
-        id: 'organization-ai',
-        title: 'AI',
-        flag: 'AI_TRAINING',
-        settings: [
-            {
                 id: 'organization-ai-announcement',
                 title: '',
                 description: '',
                 component: <OrganizationAIAnnouncement />,
+                flag: 'AI_TRAINING',
                 keywords: ['ai', 'training', 'announcement'],
             },
             {
                 id: 'organization-ai-training-opt-out',
                 title: 'AI training',
                 component: <OrganizationAITrainingOptOut />,
+                flag: 'AI_TRAINING',
                 keywords: ['ai', 'training', 'opt-out', 'opt-in', 'model', 'max'],
                 searchDescription:
                     'Control whether PostHog can use your data to train AI models. Turning this off disables AI features for your organization.',
+            },
+            {
+                id: 'organization-ip-anonymization-default',
+                title: 'IP data capture default',
+                description:
+                    'When enabled, new projects will automatically have "Discard client IP data" turned on. This is recommended for GDPR compliance. Existing projects are not affected.',
+                component: <OrgIPAnonymizationDefault />,
+                keywords: ['ip', 'anonymize', 'gdpr', 'privacy', 'geolocation'],
             },
         ],
     },
