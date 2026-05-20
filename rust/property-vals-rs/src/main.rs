@@ -5,7 +5,7 @@ use axum::{response::IntoResponse, routing::get, Router};
 use common_kafka::kafka_consumer::SingleTopicConsumer;
 use common_kafka::kafka_producer::create_kafka_producer;
 use lifecycle::{ComponentOptions, Manager};
-use property_values_aggregator::{
+use property_vals_rs::{
     app_context::AppContext, config::Config, producer::AggregatedProducer, worker::worker_loop,
 };
 use serve_metrics::setup_metrics_routes;
@@ -27,13 +27,13 @@ fn setup_tracing() {
 }
 
 pub async fn index() -> &'static str {
-    "property-values-aggregator"
+    "property-vals-rs"
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_tracing();
-    info!("Starting up property-values-aggregator...");
+    info!("Starting up property-vals-rs...");
 
     let config = Config::init_with_defaults()?;
 
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut manager = Manager::builder("property-values-aggregator")
+    let mut manager = Manager::builder("property-vals-rs")
         .with_global_shutdown_timeout(Duration::from_secs(60))
         .build();
 
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let consumer = SingleTopicConsumer::new(config.kafka.clone(), config.consumer.clone())?;
     let raw_producer = create_kafka_producer(&config.kafka, worker_handle.clone()).await?;
-    let producer: Arc<dyn property_values_aggregator::producer::Producer> = Arc::new(
+    let producer: Arc<dyn property_vals_rs::producer::Producer> = Arc::new(
         AggregatedProducer::new(raw_producer, config.output_topic.clone()),
     );
 
@@ -125,6 +125,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     guard.wait().await?;
 
-    info!("property-values-aggregator stopped");
+    info!("property-vals-rs stopped");
     Ok(())
 }

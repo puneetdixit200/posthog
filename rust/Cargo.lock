@@ -7306,7 +7306,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "property-values-aggregator"
+name = "property-vals-rs"
 version = "0.1.0"
 dependencies = [
  "async-trait",

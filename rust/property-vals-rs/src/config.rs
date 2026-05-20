@@ -106,7 +106,7 @@ impl Config {
         // dev stack with no env overrides. Production charts set
         // KAFKA_CONSUMER_TOPIC=team_event_partitioned_events_json.
         ConsumerConfig::set_defaults(
-            "clickhouse-property-values-aggregator",
+            "clickhouse-property-vals-rs",
             "clickhouse_events_json",
             true,
         );
