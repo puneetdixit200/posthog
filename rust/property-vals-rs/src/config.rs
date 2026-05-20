@@ -31,11 +31,16 @@ pub struct Config {
     #[envconfig(default = "500000")]
     pub max_entries_per_partition: usize,
 
-    /// Number of worker tasks per pod consuming from the shared Kafka consumer.
-    /// rdkafka serializes recv across them, so this is concurrency for the
-    /// fan-out + aggregate path, not extra Kafka connections.
-    #[envconfig(default = "4")]
-    pub worker_loop_count: usize,
+    /// Transactional producer ID. Must be unique per pod and stable across
+    /// restarts (e.g. the K8s pod name). rdkafka allows only one outstanding
+    /// transaction per ID, which pins us to one worker per pod.
+    #[envconfig(default = "property-vals-rs-local")]
+    pub kafka_transactional_id: String,
+
+    /// How long Kafka will wait on init_transactions, send_offsets_to_transaction,
+    /// and commit_transaction calls before timing out the transaction.
+    #[envconfig(default = "60")]
+    pub kafka_transaction_timeout_secs: u64,
 
     /// Teams to opt-in or opt-out of property-values aggregation.
     #[envconfig(default = "")]
@@ -105,10 +110,15 @@ impl Config {
         // Default to clickhouse_events_json so cargo run works against the local
         // dev stack with no env overrides. Production charts set
         // KAFKA_CONSUMER_TOPIC=team_event_partitioned_events_json.
+        //
+        // auto_commit=false because offsets are committed by the
+        // transactional producer via send_offsets_to_transaction. If
+        // librdkafka auto-committed in the background we'd lose the
+        // exactly-once guarantee.
         ConsumerConfig::set_defaults(
             "clickhouse-property-vals-rs",
             "clickhouse_events_json",
-            true,
+            false,
         );
         Config::init_from_env()
     }

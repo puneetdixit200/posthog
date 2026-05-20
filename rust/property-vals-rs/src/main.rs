@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use axum::{response::IntoResponse, routing::get, Router};
 use common_kafka::kafka_consumer::SingleTopicConsumer;
-use common_kafka::kafka_producer::create_kafka_producer;
 use lifecycle::{ComponentOptions, Manager};
 use property_vals_rs::{
     app_context::AppContext, config::Config, producer::AggregatedProducer, worker::worker_loop,
@@ -68,27 +67,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         consumer_group = %config.consumer.kafka_consumer_group,
         output_topic = %config.output_topic,
         flush_interval_secs = config.flush_interval_secs,
-        worker_loop_count = config.worker_loop_count,
+        transactional_id = %config.kafka_transactional_id,
         "config loaded"
     );
 
     let consumer = SingleTopicConsumer::new(config.kafka.clone(), config.consumer.clone())?;
-    let raw_producer = create_kafka_producer(&config.kafka, worker_handle.clone()).await?;
-    let producer: Arc<dyn property_vals_rs::producer::Producer> = Arc::new(
-        AggregatedProducer::new(raw_producer, config.output_topic.clone()),
-    );
+    let producer = AggregatedProducer::new(
+        &config.kafka,
+        &config.kafka_transactional_id,
+        config.output_topic.clone(),
+        Duration::from_secs(config.kafka_transaction_timeout_secs),
+        consumer.clone(),
+    )?;
 
-    let ctx = Arc::new(AppContext::new(&config, producer));
+    let ctx = Arc::new(AppContext::new(&config));
 
     let guard = manager.monitor_background();
 
-    for _ in 0..config.worker_loop_count {
-        tokio::spawn(worker_loop(
-            ctx.clone(),
-            consumer.clone(),
-            worker_handle.clone(),
-        ));
-    }
+    // Single worker per pod: rdkafka enforces one outstanding transaction
+    // per transactional.id, and there's one transactional.id per pod.
+    tokio::spawn(worker_loop(
+        ctx.clone(),
+        consumer,
+        producer,
+        worker_handle.clone(),
+    ));
     drop(worker_handle);
 
     let app = Router::new()
