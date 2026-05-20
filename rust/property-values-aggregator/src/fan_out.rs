@@ -2,10 +2,13 @@ use serde_json::Value;
 
 use crate::types::{Event, PropertyType, TupleKey};
 
-/// Length cap on `property_key`. Matches Django `PropertyDefinition.name` max_length.
+/// Length cap on `property_key` in Unicode codepoints. Matches Django
+/// `PropertyDefinition.name` max_length, which counts codepoints, and matches
+/// Bloblang `string.length()` semantics on the prior Bento mapping.
 pub const MAX_PROPERTY_KEY_LEN: usize = 400;
 
-/// Length cap on `property_value`. Strictly less than this — 256 chars is dropped.
+/// Length cap on `property_value` in Unicode codepoints. Strictly less than
+/// this, 256 codepoints is dropped.
 pub const MAX_PROPERTY_VALUE_LEN: usize = 256;
 
 /// Fan one Event out to its constituent property-value tuples.
@@ -62,10 +65,10 @@ fn emit_from_blob(team_id: i64, property_type: PropertyType, raw: &str, out: &mu
 
         let property_value = coerce_to_string(value);
 
-        if key.is_empty() || key.len() > MAX_PROPERTY_KEY_LEN {
+        if key.is_empty() || key.chars().count() > MAX_PROPERTY_KEY_LEN {
             continue;
         }
-        if property_value.is_empty() || property_value.len() >= MAX_PROPERTY_VALUE_LEN {
+        if property_value.is_empty() || property_value.chars().count() >= MAX_PROPERTY_VALUE_LEN {
             continue;
         }
 
@@ -95,8 +98,6 @@ mod tests {
     fn event(properties: &str) -> Event {
         Event {
             team_id: 2,
-            created_at: Some("2026-05-19T14:00:00Z".to_string()),
-            timestamp: None,
             properties: Some(properties.to_string()),
             person_properties: None,
             group0_properties: None,
@@ -143,6 +144,24 @@ mod tests {
     }
 
     #[test]
+    fn multi_byte_value_under_codepoint_cap_is_kept() {
+        // 255 CJK codepoints = 765 bytes. Using .len() would silently drop
+        // this; .chars().count() correctly keeps it.
+        let value = "あ".repeat(255);
+        let tuples = fan_out(&event(&format!(r#"{{"k":"{}"}}"#, value)));
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(tuples[0].property_value, value);
+    }
+
+    #[test]
+    fn multi_byte_key_over_codepoint_cap_is_dropped() {
+        // 401 CJK codepoints = 1203 bytes. Codepoint-aware check drops it.
+        let key = "あ".repeat(401);
+        let tuples = fan_out(&event(&format!(r#"{{"{}":"v"}}"#, key)));
+        assert!(tuples.is_empty());
+    }
+
+    #[test]
     fn property_key_401_chars_is_dropped_and_400_is_kept() {
         let kept = "k".repeat(400);
         let dropped = "k".repeat(401);
@@ -159,8 +178,6 @@ mod tests {
     fn person_properties_emit_person_type() {
         let ev = Event {
             team_id: 2,
-            created_at: None,
-            timestamp: None,
             properties: None,
             person_properties: Some(r#"{"email":"foo@bar.com"}"#.to_string()),
             group0_properties: None,
@@ -180,8 +197,6 @@ mod tests {
     fn group2_properties_emit_group_2_type() {
         let ev = Event {
             team_id: 2,
-            created_at: None,
-            timestamp: None,
             properties: None,
             person_properties: None,
             group0_properties: None,

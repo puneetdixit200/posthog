@@ -8,11 +8,6 @@ pub struct Event {
     pub team_id: i64,
 
     #[serde(default)]
-    pub created_at: Option<String>,
-    #[serde(default)]
-    pub timestamp: Option<String>,
-
-    #[serde(default)]
     pub properties: Option<String>,
     #[serde(default)]
     pub person_properties: Option<String>,
