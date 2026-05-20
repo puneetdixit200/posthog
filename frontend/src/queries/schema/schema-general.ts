@@ -1166,6 +1166,8 @@ export interface ChartSettings {
     showPieTotal?: boolean
     showNullsAsZero?: boolean
     heatmap?: HeatmapSettings
+    /** Per-breakdown-value color customizations. Keyed by the raw breakdown column value. */
+    resultCustomizations?: Record<string, ResultCustomizationByValue>
 }
 
 export interface ConditionalFormattingRule {
@@ -2923,6 +2925,17 @@ export type LogsSparklineBreakdownBy = 'severity' | 'service'
 
 /** @title LogsOrderBy */
 export type LogsOrderBy = 'latest' | 'earliest'
+
+/**
+ * Filter criteria for a logs alert configuration. Subset of LogsViewerFilters
+ * (excludes dateRange). At least one of `severityLevels`, `serviceNames`, or
+ * `filterGroup` must be set on a live (enabled=true) alert.
+ */
+export interface LogsAlertFilters {
+    severityLevels?: LogSeverityLevel[]
+    serviceNames?: string[]
+    filterGroup?: PropertyGroupFilter
+}
 
 export interface LogsQuery extends DataNode<LogsQueryResponse> {
     kind: NodeKind.LogsQuery
@@ -5866,6 +5879,7 @@ export const externalDataSources = [
     'ClickHouse',
     'Plain',
     'Resend',
+    'PgAnalyze',
 ] as const
 
 export type ExternalDataSourceType = (typeof externalDataSources)[number]
