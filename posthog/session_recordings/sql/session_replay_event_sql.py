@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS {table_name} {on_cluster_clause}
     ai_tags_fixed Array(String),
     ai_tags_freeform Array(String),
     ai_highlighted UInt8,
+    interestingness_score Nullable(Float32),
 ) ENGINE = {engine}
 """
 
@@ -105,6 +106,11 @@ CREATE TABLE IF NOT EXISTS {table_name} {on_cluster_clause}
     ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
     -- AI-generated flag indicating the session is highlighted / worth watching
     ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+    -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+    -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+    -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+    -- idempotently (max(0.42, 0.42) = 0.42).
+    interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
 ) ENGINE = {engine}
 """
 
@@ -178,6 +184,7 @@ def SESSION_REPLAY_EVENTS_TABLE_MV_SQL(on_cluster=True, exclude_columns=None):
 {",`ai_tags_fixed` SimpleAggregateFunction(groupUniqArrayArray, Array(String))" if "ai_tags_fixed" not in exclude_columns else ""}
 {",`ai_tags_freeform` SimpleAggregateFunction(groupUniqArrayArray, Array(String))" if "ai_tags_freeform" not in exclude_columns else ""}
 {",`ai_highlighted` SimpleAggregateFunction(max, UInt8)" if "ai_highlighted" not in exclude_columns else ""}
+{",`interestingness_score` SimpleAggregateFunction(max, Nullable(Float32))" if "interestingness_score" not in exclude_columns else ""}
 )"""
 
     return f"""
@@ -222,6 +229,7 @@ max(_timestamp) as _timestamp
 {",groupUniqArrayArray(ai_tags_fixed) as ai_tags_fixed" if "ai_tags_fixed" not in exclude_columns else ""}
 {",groupUniqArrayArray(ai_tags_freeform) as ai_tags_freeform" if "ai_tags_freeform" not in exclude_columns else ""}
 {",max(ai_highlighted) as ai_highlighted" if "ai_highlighted" not in exclude_columns else ""}
+{",max(interestingness_score) as interestingness_score" if "interestingness_score" not in exclude_columns else ""}
 FROM {database}.kafka_session_replay_events
 group by session_id, team_id
 """
@@ -323,6 +331,7 @@ def SESSION_REPLAY_EVENTS_WS_MV_SQL(on_cluster=False, exclude_columns=None):
 {",`ai_tags_fixed` SimpleAggregateFunction(groupUniqArrayArray, Array(String))" if "ai_tags_fixed" not in exclude_columns else ""}
 {",`ai_tags_freeform` SimpleAggregateFunction(groupUniqArrayArray, Array(String))" if "ai_tags_freeform" not in exclude_columns else ""}
 {",`ai_highlighted` SimpleAggregateFunction(max, UInt8)" if "ai_highlighted" not in exclude_columns else ""}
+{",`interestingness_score` SimpleAggregateFunction(max, Nullable(Float32))" if "interestingness_score" not in exclude_columns else ""}
 )"""
 
     return f"""
@@ -357,6 +366,7 @@ max(_timestamp) as _timestamp
 {",groupUniqArrayArray(ai_tags_fixed) as ai_tags_fixed" if "ai_tags_fixed" not in exclude_columns else ""}
 {",groupUniqArrayArray(ai_tags_freeform) as ai_tags_freeform" if "ai_tags_freeform" not in exclude_columns else ""}
 {",max(ai_highlighted) as ai_highlighted" if "ai_highlighted" not in exclude_columns else ""}
+{",max(interestingness_score) as interestingness_score" if "interestingness_score" not in exclude_columns else ""}
 FROM {database}.{KAFKA_SESSION_REPLAY_EVENTS_WS_TABLE}
 group by session_id, team_id
 """

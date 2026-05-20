@@ -1,1 +1,1 @@
-0252_sessions_v3_interestingness_score_kafka
+0252_session_replay_events_interestingness_score

@@ -8,8 +8,8 @@ through `validate_features` and `predict`, which is what catches schema
 drift between the SQL aliases and the booster's `feature_names`.
 
 Prereqs that the local CH database needs:
-    * `interestingness_score` column on `raw_sessions_v3` (added by an ALTER
-      migration that ships alongside this test).
+    * `interestingness_score` column on `session_replay_events` (added by an
+      ALTER migration that ships alongside this test).
     * `session_replay_features` populated with at least the columns the model
       reads (every feature this test inserts is in the live DDL today).
 
@@ -21,10 +21,13 @@ What the test deliberately does NOT cover:
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime, timedelta
+
 from posthog.test.base import BaseTest, ClickhouseTestMixin
 
 from posthog.clickhouse.client import sync_execute
-from posthog.models.raw_sessions.sessions_v3 import TRUNCATE_RAW_SESSIONS_TABLE_SQL_V3, WRITABLE_RAW_SESSIONS_TABLE_V3
+from posthog.session_recordings.sql.session_replay_event_sql import TRUNCATE_SESSION_REPLAY_EVENTS_TABLE_SQL
 from posthog.session_recordings.sql.session_replay_feature_sql import TRUNCATE_SESSION_REPLAY_FEATURES_TABLE_SQL
 from posthog.temporal.session_replay.interestingness_scoring_sweep.activities import _fetch_features_dataframe
 from posthog.temporal.session_replay.interestingness_scoring_sweep.features import ID_COLUMNS, validate_features
@@ -41,25 +44,30 @@ class TestScoreChunkPipelineClickhouse(ClickhouseTestMixin, BaseTest):
         # other tests can leave residue around. Wipe them before every run so
         # the assertions on row counts / scores don't get poisoned.
         sync_execute(TRUNCATE_SESSION_REPLAY_FEATURES_TABLE_SQL())
-        sync_execute(TRUNCATE_RAW_SESSIONS_TABLE_SQL_V3())
+        sync_execute(TRUNCATE_SESSION_REPLAY_EVENTS_TABLE_SQL())
 
-        # Fresh UUIDv7 per test → timestamp is "now-ish", which the SQL's
-        # `session_timestamp >= now() - INTERVAL N DAY` filter requires.
-        # A static UUIDv7 would be dropped by the lookback filter the moment
-        # this test runs more than `lookback_days` after the hardcoded value.
-        rows = sync_execute("SELECT generateUUIDv7()")
-        self.session_id: str = str(rows[0][0])
+        # Fresh UUID per test → timestamp is "now-ish", which the SQL's
+        # `min_first_timestamp >= now() - INTERVAL N DAY` filter requires.
+        self.session_id: str = str(uuid.uuid4())
+        self.distinct_id: str = "d1"
+        self.session_start: datetime = datetime.now(tz=UTC) - timedelta(seconds=30)
 
     def _seed_unscored_session(self) -> None:
-        """Insert a NULL-score raw_sessions_v3 row matching self.session_id."""
-        # Mirrors the Kafka writeback MV's partial-column INSERT pattern: we
-        # only set the ORDER BY keys, every other AggregateFunction column
-        # gets its empty state and merges as a no-op. interestingness_score
-        # left NULL → row is "eligible" via the HAVING clause.
+        """Insert a NULL-score session_replay_events row matching self.session_id.
+
+        Mirrors what real ingestion writes (one chunk row with min/max timestamps)
+        but leaves interestingness_score NULL so the HAVING filter picks the row up.
+        """
         sync_execute(
-            f"INSERT INTO {WRITABLE_RAW_SESSIONS_TABLE_V3()} (team_id, session_id_v7) "
-            f"SELECT %(team_id)s, toUInt128(toUUID(%(session_id)s))",
-            {"team_id": self.team.id, "session_id": self.session_id},
+            "INSERT INTO writable_session_replay_events "
+            "(session_id, team_id, distinct_id, min_first_timestamp, max_last_timestamp) "
+            "VALUES (%(session_id)s, %(team_id)s, %(distinct_id)s, %(start)s, now64(6))",
+            {
+                "session_id": self.session_id,
+                "team_id": self.team.id,
+                "distinct_id": self.distinct_id,
+                "start": self.session_start,
+            },
         )
 
     def _seed_replay_features(self) -> None:
@@ -97,7 +105,7 @@ class TestScoreChunkPipelineClickhouse(ClickhouseTestMixin, BaseTest):
             "  network_request_duration_sum, network_request_duration_sum_of_squares,"
             "  network_request_duration_count"
             ") SELECT "
-            "  %(session_id)s, %(team_id)s, 'd1',"
+            "  %(session_id)s, %(team_id)s, %(distinct_id)s,"
             "  now64(6) - INTERVAL 30 SECOND, now64(6),"
             "  250, 12, 80, 200,"
             "  60, 5, 8,"
@@ -111,7 +119,7 @@ class TestScoreChunkPipelineClickhouse(ClickhouseTestMixin, BaseTest):
             "  1200.0, 4, 1, 1800.0,"
             "  20, 5000.0, 1500000.0, 4500.0,"
             "  3000.0, 400000.0, 30",
-            {"session_id": self.session_id, "team_id": self.team.id},
+            {"session_id": self.session_id, "team_id": self.team.id, "distinct_id": self.distinct_id},
         )
 
     def test_full_pipeline_produces_score_in_unit_interval(self) -> None:
@@ -131,6 +139,14 @@ class TestScoreChunkPipelineClickhouse(ClickhouseTestMixin, BaseTest):
             assert col in df.columns, f"id column {col!r} missing from SELECT output"
         for name in feature_names:
             assert name in df.columns, f"feature {name!r} missing from SELECT output"
+
+        # ID columns must round-trip the values we seeded — these are what the
+        # producer relies on (shard routing + identity-value timestamp).
+        row = df.iloc[0]
+        assert str(row["session_id"]) == self.session_id
+        assert int(row["team_id"]) == self.team.id
+        assert str(row["distinct_id"]) == self.distinct_id
+        assert row["min_first_timestamp"] is not None
 
         # The validator is the same gate the production activity uses — if
         # this raises, the SQL drifted from the booster (which `test_sql_alignment.py`

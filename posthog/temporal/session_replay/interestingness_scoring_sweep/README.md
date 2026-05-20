@@ -2,7 +2,7 @@
 
 Temporal pipeline that runs an XGBoost model over recently-created sessions and
 writes the resulting interestingness score (a Float32 in `[0, 1]`) onto
-`raw_sessions_v3.interestingness_score`.
+`session_replay_events.interestingness_score`.
 
 The score is intended to drive downstream session-summarization work — sessions
 with higher scores are prioritized.
@@ -21,14 +21,15 @@ ScoreSessionsBatchWorkflow             (parent — scaffolding only)
          score_chunk_activity(spec)    (× N, runs in parallel)
             internally:
               1. CH SELECT eligible (hash-partitioned, IS NULL) sessions
-                 from raw_sessions_v3, INNER JOIN feature CTEs over
+                 from session_replay_events, INNER JOIN feature CTEs over
                  session_replay_features (same expressions as the
                  training query)
               2. validate_features (hard fail on schema drift)
               3. xgboost.Booster.predict
-              4. ClickhouseProducer → Kafka topic
-                 (clickhouse_raw_sessions_v3_interestingness_score)
-              5. CH Kafka engine table + MV → writable_raw_sessions_v3
+              4. get_producer(REPLAY) → Kafka topic
+                 (clickhouse_session_replay_events)
+              5. existing session_replay_events_mv merges the partial row
+                 into the real session row in writable_session_replay_events
               6. return ChunkResult(scored=N)
 ```
 
@@ -37,37 +38,43 @@ ScoreSessionsBatchWorkflow             (parent — scaffolding only)
 Producer side (`activities._publish_scores`):
 
 - One JSONEachRow message per scored session on
-  `KAFKA_CLICKHOUSE_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE`.
-- `session_id_v7` is sent as a decimal string because uint128 exceeds
-  JSON-safe integer precision.
-- `session_timestamp` is **not** sent — the writable table derives it from
-  `session_id_v7` via its `DEFAULT` expression.
+  `KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS` — the same topic ingestion uses.
+- The payload carries `session_id`, `team_id`, `distinct_id`, an identity-value
+  for every other column the Kafka table has, plus `interestingness_score`.
+- `distinct_id` MUST be the session's real distinct_id — `writable_session_replay_events`
+  shards on `sipHash64(distinct_id)`, so a wrong value would route the partial
+  row to a different shard than the real session rows and the AggregatingMergeTree
+  could never merge them. The eligible_sessions CTE surfaces it via `any(distinct_id)`.
+- `first/last_timestamp = min_first_timestamp + 1µs` so min/max/argMin on
+  the MV side keep the real session's values — using now() would shift
+  max_last_timestamp forward by however long the scorer takes.
 - `producer.flush(timeout=30s)` runs after the loop so the activity doesn't
   ack `scored=N` to the workflow before librdkafka has actually delivered.
 
-Consumer side (CH-managed, see
-`posthog/models/raw_sessions/sessions_v3_score_kafka.py`):
+Consumer side (no per-pipeline CH objects — we piggyback on ingestion):
 
-- `kafka_raw_sessions_v3_interestingness_score` — Kafka engine table.
-- `raw_sessions_v3_interestingness_score_mv` — materialized view that does
-  `INSERT INTO writable_raw_sessions_v3 (team_id, session_id_v7,
-interestingness_score)` after `toUInt128(session_id_v7)`. Every other
-  column gets its empty `AggregateFunction` state, which the
-  AggregatingMergeTree merges as a no-op against the existing session row.
+- `kafka_session_replay_events` (Kafka engine) — already consumes from this topic.
+- `session_replay_events_mv` aggregates with `GROUP BY session_id, team_id`
+  and writes the `max(interestingness_score)` into the existing session row in
+  `writable_session_replay_events`. Every identity-value column we sent merges
+  as a no-op into the existing aggregates (sum of 0, max of NULL, etc.).
 
-In tests `ClickhouseProducer` short-circuits to `sync_execute(sql, data)`
-against `INSERT_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE_SQL`, so unit tests
-exercise the same writable-table contract without needing a Kafka cluster.
+Identical pattern to the AI summarization writeback in
+`posthog/temporal/session_replay/session_summary/activities/video_based/a7d_tag_and_highlight_session.py`.
 
 ### Two CH tables, one pipeline
 
-- **`raw_sessions_v3`** is where the score lives (`interestingness_score`,
-  `Nullable(Float32)`, write-once via the `IS NULL` filter on the read side
-  and `max` on merge so a real score never gets clobbered by NULL).
+- **`session_replay_events`** is where the score lives now (`interestingness_score`,
+  `SimpleAggregateFunction(max, Nullable(Float32))`, write-once via the `IS NULL`
+  filter on the read side and `max` on merge so a real score never gets clobbered
+  by NULL). It sits alongside the existing AI-generated columns
+  (`ai_tags_fixed`, `ai_tags_freeform`, `ai_highlighted`) — same write pattern.
 - **`session_replay_features`** is where the model's input features live
   (the table populated by the replay feature pipeline). The pipeline keys
   on `(team_id, session_id)` with string `session_id`; the JOIN back to
-  `raw_sessions_v3` is via `toString(session_id_v7)`.
+  `session_replay_events` is a direct String-to-String match (no UUID
+  byte-swap dance — that complexity disappeared when we moved off the
+  `raw_sessions_v3.session_id_v7` UInt128 column).
 
 The serving SELECT mirrors the training query verbatim: same
 `aggregated_sufficient_statistics` and `replay_features` CTE shape, same
@@ -75,28 +82,30 @@ column names, same arithmetic — so any drift between training and serving
 shows up as a `validate_features` failure rather than silent score skew.
 
 Sessions without replay features are dropped by the inner join and stay
-NULL in `raw_sessions_v3`. They re-appear on subsequent ticks until they
-age out of the lookback window. That's deliberate — the model can't score
-them, and writing a sentinel would either need a separate column or break
-the write-once semantics. Keep the lookback tight so the wasted scan cost
-is bounded.
+NULL in `session_replay_events`. They re-appear on subsequent ticks until
+they age out of the lookback window. That's deliberate — the model can't
+score them, and writing a sentinel would either need a separate column or
+break the write-once semantics. Keep the lookback tight so the wasted scan
+cost is bounded.
 
 ### Why this shape
 
 - **Workflow stays tiny** — no per-session work in workflow code, payloads stay
   far below the 2 MiB Temporal hard limit.
-- **Hash partitioning** by `cityHash64(session_id_v7) % of_chunks` gives every
-  session exactly one bucket, lining up with the table's sharding key.
+- **Hash partitioning** by `cityHash64(session_id) % of_chunks` gives every
+  session exactly one bucket. Note this is a different key than the table's
+  `sipHash64(distinct_id)` sharding key — the chunk fan-out only needs balanced
+  buckets, not co-location with the data.
 - **Idempotent on retry** — each chunk re-queries with
   `HAVING max(interestingness_score) IS NULL`, so a partial-failure retry
   naturally skips already-scored sessions. No claim/lock table needed.
 - **No Redis, no S3** — every chunk is fetch-predict-write end-to-end inside
   one activity. Add Redis only if/when fetch and predict need to live on
   different worker pools (e.g., GPU vs CPU).
-- **Kafka-mediated partial-column INSERT** — score writeback flows through
-  the same Kafka → CH MV pipeline as every other CH writer in PostHog. We
-  do not produce 200k INSERT statements per tick; we produce 200k JSONEachRow
-  messages and let the CH Kafka engine table + MV do the batched insert.
+- **No dedicated Kafka triplet** — score writeback piggybacks on the existing
+  replay ingestion topic + Kafka table + MV. We don't add a new Kafka topic,
+  a new consumer group, or a new MV — the score is just another column written
+  back via the same partial-row pattern as `ai_highlighted` and `is_deleted`.
   At-least-once delivery is harmless because the score column is
   `SimpleAggregateFunction(max, …)` and the pipeline only ever produces a
   single score per session.
@@ -236,10 +245,11 @@ These are deliberately out of scope for the initial PR:
   `validate_features` and `scorer` (load + predict + thread safety + range
   guards). The end-to-end activity flow against real CH is still untested;
   start with a fixture-backed smoke test of `fetch_features_sql`.
-- **Backfill.** Existing `raw_sessions_v3` rows are NULL, which is fine for
-  "score going forward". If we ever want to score historical sessions, write
-  a one-off Dagster job that walks `cityHash64(session_id_v7) % N` buckets
-  and triggers the same `score_chunk_activity` per bucket.
+- **Backfill.** Existing `session_replay_events` rows have NULL scores, which
+  is fine for "score going forward". If we ever want to score historical
+  sessions, write a one-off Dagster job that walks
+  `cityHash64(session_id) % N` buckets and triggers the same
+  `score_chunk_activity` per bucket.
 - **Metrics.** Expose `total_scored`, `chunks_failed`, and the chunk-wall-time
   histogram to whatever observability stack the `INTERESTINGNESS_SCORING_SWEEP_TASK_QUEUE`
   worker pool uses.

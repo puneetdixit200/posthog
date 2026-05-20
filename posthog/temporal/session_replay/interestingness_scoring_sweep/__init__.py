@@ -1,4 +1,4 @@
-"""Temporal pipeline that writes interestingness scores onto raw_sessions_v3.
+"""Temporal pipeline that writes interestingness scores onto session_replay_events.
 
 See README.md in this directory for the architecture rationale.
 """

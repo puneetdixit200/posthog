@@ -21,7 +21,7 @@ SCHEDULE_INTERVAL = timedelta(minutes=5)
 # session creation; transient backlogs drain across consecutive ticks.
 TARGET_SESSIONS_PER_TICK = 200_000
 
-# Deterministic hash partitioning over `cityHash64(session_id_v7) % DEFAULT_OF_CHUNKS`.
+# Deterministic hash partitioning over `cityHash64(session_id) % DEFAULT_OF_CHUNKS`.
 # 20 buckets × ~10k sessions = TARGET_SESSIONS_PER_TICK, matched to a 5min budget.
 # Skew is bounded by hash uniformity (~10% per-bucket variance is normal).
 DEFAULT_OF_CHUNKS = 20

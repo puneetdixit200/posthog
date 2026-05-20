@@ -243,8 +243,9 @@ class TestPredict:
         # protects that contract.
         df = feature_frame.copy()
         df["team_id"] = 42
-        df["session_id_v7"] = "00000000-0000-7000-0000-000000000000"
-        df["session_timestamp"] = pd.Timestamp("2026-01-01")
+        df["session_id"] = "00000000-0000-7000-0000-000000000000"
+        df["distinct_id"] = "user-1"
+        df["min_first_timestamp"] = pd.Timestamp("2026-01-01")
 
         scores = predict(df)
 

@@ -3,16 +3,24 @@
 The serving SELECT mirrors the training query:
 
     1. `eligible_sessions` — hash-partitioned slice of unscored sessions from
-       `raw_sessions_v3` (the table the score is written back to).
-       `HAVING max(interestingness_score) IS NULL` is the unscored filter.
-       `ORDER BY session_id_v7 LIMIT chunk_size` makes the chunk
-       deterministic across the two CTE evaluations (see note below).
+       `session_replay_events` (the table the score is written back to). It
+       carries `team_id`, `session_id`, `distinct_id`, and `min_first_timestamp`
+       through to the producer:
 
-       The `session_id_str` cast converts `raw_sessions_v3.session_id_v7`
-       (UInt128, ClickHouse UUID layout = two 64-bit halves swapped) back
-       to the canonical hyphenated UUID string used by
-       `session_replay_features.session_id`. Without the byte-swap we
-       produce a decimal string that never matches anything in features.
+         * `team_id` + `session_id` join to `session_replay_features` and
+           identify the row to score.
+         * `distinct_id` is the Distributed sharding key
+           (`sipHash64(distinct_id)`) on `writable_session_replay_events`. The
+           partial-row Kafka writeback MUST carry the real distinct_id so the
+           merged row lands on the same shard as the rest of the session;
+           otherwise the AggregatingMergeTree can never combine them.
+         * `min_first_timestamp` is the session-start timestamp the producer
+           uses (+1µs) for the partial row, so min/max/argMin aggregations on
+           the MV side still prefer the real session rows.
+
+       `HAVING max(interestingness_score) IS NULL` is the unscored filter.
+       `ORDER BY session_id LIMIT chunk_size` makes the chunk deterministic
+       across the two CTE evaluations (see note below).
 
     2. `aggregated_sufficient_statistics` — pulls raw aggregates from
        `session_replay_features` for those sessions, mirroring the
@@ -30,24 +38,27 @@ The serving SELECT mirrors the training query:
 
     4. Final SELECT — joins `replay_features` back to `eligible_sessions`
        on `(team_id, session_id)` (inner join: sessions without replay
-       features are dropped and stay NULL in raw_sessions_v3 — they
+       features are dropped and stay NULL in session_replay_events — they
        re-appear on the next tick within the lookback window, then
        naturally fall out once they age past it).
 
 CTE evaluation note: ClickHouse inlines `WITH ... AS` as a subquery — it
 does not materialize the CTE once and reuse the result. `eligible_sessions`
 is therefore evaluated twice (once for the GLOBAL IN subquery, once for
-the final FROM). The `ORDER BY session_id_v7` before the LIMIT is what
+the final FROM). The `ORDER BY session_id` before the LIMIT is what
 keeps the two evaluations consistent; without it, two un-ordered LIMITs
 of the same query are not guaranteed to return the same rows, and any
 mismatch would be silently dropped by the inner join.
 
-Score writeback flows through Kafka — see
-`posthog.models.raw_sessions.sessions_v3_score_kafka` for the topic / Kafka
-engine table / MV trio. The activity emits one JSONEachRow message per scored
-session; CH consumes via the MV which performs a partial-column insert into
-`writable_raw_sessions_v3`. The AggregatingMergeTree then merges the score
-onto the existing session row without disturbing any other column.
+Score writeback flows through the existing replay-ingestion Kafka topic
+(`KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS`) — same pattern as the AI-summary
+writeback in `posthog.temporal.session_replay.session_summary.activities.
+video_based.a7d_tag_and_highlight_session`. The activity emits one
+JSONEachRow message per scored session with identity values for every
+non-score column; `session_replay_events_mv` consumes via `Kafka` engine
+and performs a partial-column insert into `writable_session_replay_events`.
+The AggregatingMergeTree then merges `max(interestingness_score)` onto
+the existing session row without disturbing any other aggregate.
 
 Feature alignment contract: the final SELECT alias list must match the
 booster's `feature_names` exactly (set + order). `feature_columns_in_select`
@@ -58,11 +69,11 @@ mis-scored sessions, so we catch it at CI rather than at runtime.
 
 import re
 
-from posthog.models.raw_sessions.sessions_v3 import DISTRIBUTED_RAW_SESSIONS_TABLE_V3
-
-# Distributed `session_replay_features` table name. Hardcoded because there is
-# no Python helper for it; the schema is in
-# posthog/session_recordings/sql/session_replay_feature_sql.py.
+# Distributed table names — hardcoded because there are no shared Python
+# helpers in the codebase that re-export them. Source of truth lives in
+# `posthog/session_recordings/sql/session_replay_event_sql.py` and
+# `posthog/session_recordings/sql/session_replay_feature_sql.py`.
+SESSION_REPLAY_EVENTS_TABLE = "session_replay_events"
 SESSION_REPLAY_FEATURES_TABLE = "session_replay_features"
 
 
@@ -155,7 +166,7 @@ SELECT
     uniqCombinedMerge(12)(f.unique_click_target_count) AS unique_click_targets,
     uniqCombinedMerge(12)(f.unique_form_field_count)   AS unique_form_fields
 FROM {features_table} AS f
-WHERE (f.team_id, f.session_id) GLOBAL IN (SELECT team_id, session_id_str FROM eligible_sessions)
+WHERE (f.team_id, f.session_id) GLOBAL IN (SELECT team_id, session_id FROM eligible_sessions)
   AND f.min_first_timestamp >= now() - toIntervalDay(%(lookback_days)s)
 GROUP BY f.team_id, f.session_id
 """.strip()
@@ -240,44 +251,41 @@ FROM aggregated_sufficient_statistics f
 
 
 def fetch_features_sql(
-    raw_sessions_table: str | None = None,
+    replay_events_table: str = SESSION_REPLAY_EVENTS_TABLE,
     features_table: str = SESSION_REPLAY_FEATURES_TABLE,
 ) -> str:
     """Return the parameterized SELECT used by `score_chunk_activity`.
 
     Bound parameters: %(of_chunks)s, %(chunk_id)s, %(lookback_days)s, %(chunk_size)s.
 
-    Returned columns: `team_id`, `session_id_v7`, `session_timestamp`, then the
-    feature columns. The SELECT alias list must match the booster's
+    Returned columns: `team_id`, `session_id`, `distinct_id`, `min_first_timestamp`,
+    then the feature columns. The feature alias list must match the booster's
     `feature_names` (= `scorer.get_feature_names()`); `validate_features`
     enforces this on every chunk. Row count <= chunk_size, minus any
     sessions that have no replay features (inner-joined out).
+
+    `distinct_id` and `min_first_timestamp` are surfaced specifically so the
+    writeback can build an identity-value Kafka payload that (a) routes to
+    the right shard via the sipHash64(distinct_id) sharding key and (b)
+    cannot corrupt min/max/argMin aggregates on the existing session rows.
     """
-    raw_table = raw_sessions_table or DISTRIBUTED_RAW_SESSIONS_TABLE_V3()
     return f"""
 WITH eligible_sessions AS (
     SELECT
         team_id,
-        session_id_v7,
-        session_timestamp,
-        -- session_replay_features.session_id is a hyphenated UUID string
-        -- (e.g. "01939d3e-7c80-7b56-bf8d-1e74e5c3b3a1"); raw_sessions_v3
-        -- stores it as the equivalent UInt128 with the two halves swapped
-        -- (CH UUID layout). Reverse the byte-swap and reinterpret to get
-        -- back the canonical UUID string for the join.
-        toString(reinterpretAsUUID(
-            bitOr(bitShiftLeft(session_id_v7, 64), bitShiftRight(session_id_v7, 64))
-        )) AS session_id_str
-    FROM {raw_table}
-    WHERE session_timestamp >= now() - toIntervalDay(%(lookback_days)s)
-      AND cityHash64(session_id_v7) %% %(of_chunks)s = %(chunk_id)s
-    GROUP BY team_id, session_id_v7, session_timestamp
+        session_id,
+        any(distinct_id) AS distinct_id,
+        min(min_first_timestamp) AS min_first_timestamp
+    FROM {replay_events_table}
+    WHERE min_first_timestamp >= now() - toIntervalDay(%(lookback_days)s)
+      AND cityHash64(session_id) %% %(of_chunks)s = %(chunk_id)s
+    GROUP BY team_id, session_id
     HAVING max(interestingness_score) IS NULL
     -- ORDER BY makes LIMIT deterministic across the two CTE evaluations
     -- (CH inlines CTEs as subqueries — without a stable order, the GLOBAL IN
     -- subquery and the final FROM could pick different subsets and the
     -- inner join would silently drop the difference).
-    ORDER BY session_id_v7
+    ORDER BY session_id
     LIMIT %(chunk_size)s
 ),
 aggregated_sufficient_statistics AS (
@@ -288,8 +296,9 @@ replay_features AS (
 )
 SELECT
     e.team_id,
-    e.session_id_v7,
-    e.session_timestamp,
+    e.session_id,
+    e.distinct_id,
+    e.min_first_timestamp,
     rf.event_rate,
     rf.click_rate,
     rf.keypress_rate,
@@ -352,11 +361,11 @@ SELECT
     rf.unique_form_fields,
     rf.page_revisit_share
 FROM eligible_sessions e
-INNER JOIN replay_features rf ON rf.team_id = e.team_id AND rf.session_id = e.session_id_str
+INNER JOIN replay_features rf ON rf.team_id = e.team_id AND rf.session_id = e.session_id
 """.strip()
 
 
-def count_unscored_sql(raw_sessions_table: str | None = None) -> str:
+def count_unscored_sql(replay_events_table: str = SESSION_REPLAY_EVENTS_TABLE) -> str:
     """Return a cheap COUNT estimate of unscored sessions in one hash bucket.
 
     Bound parameter: %(lookback_days)s, %(of_chunks)s.
@@ -365,15 +374,14 @@ def count_unscored_sql(raw_sessions_table: str | None = None) -> str:
     caller) is far cheaper than scanning all unscored sessions to decide
     whether to dispatch the tick.
     """
-    raw_table = raw_sessions_table or DISTRIBUTED_RAW_SESSIONS_TABLE_V3()
     return f"""
 SELECT count()
 FROM (
-    SELECT session_id_v7
-    FROM {raw_table}
-    WHERE session_timestamp >= now() - toIntervalDay(%(lookback_days)s)
-      AND cityHash64(session_id_v7) %% %(of_chunks)s = 0
-    GROUP BY team_id, session_id_v7, session_timestamp
+    SELECT session_id
+    FROM {replay_events_table}
+    WHERE min_first_timestamp >= now() - toIntervalDay(%(lookback_days)s)
+      AND cityHash64(session_id) %% %(of_chunks)s = 0
+    GROUP BY team_id, session_id
     HAVING max(interestingness_score) IS NULL
 )
 """.strip()

@@ -62,7 +62,7 @@ MODEL_FEATURE_SCHEMA_VERSION = 2
 
 # Columns that identify the row but are NOT model features. Stripped before
 # predict; re-attached for the INSERT.
-ID_COLUMNS: tuple[str, ...] = ("team_id", "session_id_v7", "session_timestamp")
+ID_COLUMNS: tuple[str, ...] = ("team_id", "session_id", "distinct_id", "min_first_timestamp")
 
 # Per-dtype-kind groupings used in `FEATURE_RANGES` below.
 # `'iuf'` accepts int / unsigned int / float — useful for pass-through counts

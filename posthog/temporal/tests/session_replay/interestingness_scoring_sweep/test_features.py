@@ -55,8 +55,9 @@ class TestValidateFeaturesHappyPaths:
         # must accept that layout, not just bare features.
         df = feature_frame.copy()
         df["team_id"] = 42
-        df["session_id_v7"] = "00000000-0000-7000-0000-000000000000"
-        df["session_timestamp"] = pd.Timestamp("2026-01-01")
+        df["session_id"] = "00000000-0000-7000-0000-000000000000"
+        df["distinct_id"] = "user-1"
+        df["min_first_timestamp"] = pd.Timestamp("2026-01-01")
         validate_features(df, feature_names=feature_names_for_tests)
 
 
@@ -161,13 +162,17 @@ class TestFeatureMatrix:
     def test_strips_id_columns(self, feature_frame: pd.DataFrame, feature_names_for_tests: tuple[str, ...]) -> None:
         df = feature_frame.copy()
         df["team_id"] = 1
-        df["session_id_v7"] = "00000000-0000-7000-0000-000000000000"
-        df["session_timestamp"] = pd.Timestamp("2026-01-01")
+        df["session_id"] = "00000000-0000-7000-0000-000000000000"
+        df["distinct_id"] = "user-1"
+        df["min_first_timestamp"] = pd.Timestamp("2026-01-01")
 
         out = feature_matrix(df, feature_names=feature_names_for_tests)
 
         assert list(out.columns) == list(feature_names_for_tests)
         assert "team_id" not in out.columns
+        assert "session_id" not in out.columns
+        assert "distinct_id" not in out.columns
+        assert "min_first_timestamp" not in out.columns
         assert len(out) == len(feature_frame)
 
     def test_preserves_row_order(self, feature_frame: pd.DataFrame, feature_names_for_tests: tuple[str, ...]) -> None:

@@ -8,13 +8,15 @@ Two activities:
       The work for each chunk is fully self-contained: no Redis, no S3, no
       cross-activity state.
 
-Score writeback uses the standard `ClickhouseProducer` -> Kafka -> CH-Kafka-MV
-pipeline; see `posthog.models.raw_sessions.sessions_v3_score_kafka`. Producing
-per-row gives us at-least-once delivery with the same async, durable, retry-able
-semantics as the rest of the platform's CH writers.
+Score writeback piggybacks on the existing `KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS`
+topic + `session_replay_events_mv` — same pattern as the AI-summary writeback
+in `posthog.temporal.session_replay.session_summary.activities.video_based.
+a7d_tag_and_highlight_session`. We send a partial-row Kafka message with
+identity values for every non-score column; the MV's `max(interestingness_score)`
+aggregation merges the score onto the real session row in the AggregatingMergeTree.
 
 Idempotency guarantees:
-    * Hash partitioning (`cityHash64(session_id_v7) %% of_chunks = chunk_id`)
+    * Hash partitioning (`cityHash64(session_id) %% of_chunks = chunk_id`)
       gives every session exactly one bucket.
     * The CH SELECT filters `HAVING max(interestingness_score) IS NULL` —
       sessions already scored in a previous attempt are skipped naturally.
@@ -27,7 +29,8 @@ Idempotency guarantees:
 
 from __future__ import annotations
 
-from typing import cast
+from datetime import datetime, timedelta
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -37,10 +40,9 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from posthog.clickhouse.client import sync_execute
-from posthog.kafka_client.client import ClickhouseProducer
 from posthog.kafka_client.routing import get_producer
-from posthog.kafka_client.topics import KAFKA_CLICKHOUSE_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE
-from posthog.models.raw_sessions.sessions_v3_score_kafka import INSERT_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE_SQL
+from posthog.kafka_client.topics import KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS
+from posthog.models.event.util import format_clickhouse_timestamp
 from posthog.temporal.session_replay.interestingness_scoring_sweep import sql as interestingness_scoring_sweep_sql
 from posthog.temporal.session_replay.interestingness_scoring_sweep.constants import (
     CH_FEATURE_QUERY_TIMEOUT_S,
@@ -145,8 +147,71 @@ def _fetch_features_dataframe(spec: ChunkSpec) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=pd.Index(columns))
 
 
+def _build_partial_row(
+    *,
+    team_id: int,
+    session_id: str,
+    distinct_id: str,
+    min_first_timestamp: datetime,
+    score: float,
+) -> dict[str, Any]:
+    """Identity-value Kafka payload that merges cleanly into session_replay_events.
+
+    Mirrors `tag_and_highlight_session_activity._produce_to_kafka`:
+
+    * Timestamps use `min_first_timestamp + 1µs` so min(first_timestamp),
+      argMin(first_url, first_timestamp), and max(last_timestamp) all keep
+      the real session's values — never the partial row's. Using now() would
+      shift max_last_timestamp forward by however long the scorer takes.
+    * `block_url=None` is critical: groupArray(block_url) drops nulls. An empty
+      string would pollute `block_urls` and break the length-match check in
+      listBlocks downstream.
+    * `first_url=None`, `snapshot_*=None`: argMin* drops nulls, so the real
+      session's first_url survives even though we wrote with an "earlier"
+      timestamp.
+    * `distinct_id` MUST be the session's real distinct_id — it's the
+      Distributed sharding key (`sipHash64(distinct_id)`). A wrong value would
+      route this partial row to a different shard than the real session rows,
+      forcing every read on this session into a cross-shard merge.
+    """
+    partial_ts = format_clickhouse_timestamp(min_first_timestamp + timedelta(microseconds=1))
+    return {
+        "session_id": session_id,
+        "team_id": team_id,
+        "distinct_id": distinct_id,
+        "first_timestamp": partial_ts,
+        "last_timestamp": partial_ts,
+        "block_url": None,
+        "first_url": None,
+        "urls": [],
+        "click_count": 0,
+        "keypress_count": 0,
+        "mouse_activity_count": 0,
+        "active_milliseconds": 0,
+        "console_log_count": 0,
+        "console_warn_count": 0,
+        "console_error_count": 0,
+        "size": 0,
+        "event_count": 0,
+        "message_count": 0,
+        "snapshot_source": None,
+        "snapshot_library": None,
+        "retention_period_days": None,
+        "is_deleted": 0,
+        "ai_tags_fixed": [],
+        "ai_tags_freeform": [],
+        "ai_highlighted": 0,
+        "interestingness_score": score,
+    }
+
+
 def _publish_scores(df: pd.DataFrame, scores: np.ndarray) -> int:
     """Produce one Kafka message per scored session and flush before returning.
+
+    Targets `KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS` so the score rides the
+    same `session_replay_events_mv` that ingestion uses; the MV's
+    `max(interestingness_score)` aggregation merges the score onto the real
+    session row in the AggregatingMergeTree.
 
     Per-row produce keeps the activity's failure mode dead simple: a crash
     mid-loop just means the chunk is retried, sessions already produced are
@@ -154,37 +219,37 @@ def _publish_scores(df: pd.DataFrame, scores: np.ndarray) -> int:
     (after CH has consumed) or harmlessly re-merged via the `max`-typed score
     column (before CH has consumed).
 
-    `ClickhouseProducer` falls back to `sync_execute(sql, data)` in TEST mode
-    so unit tests can assert against the writable table directly without
-    needing a Kafka cluster.
-
     Returns the number of rows successfully handed off to the producer (after
     flush completes). The value is what `score_chunk_activity` returns to the
     workflow as `ChunkResult.scored`.
     """
-    producer = ClickhouseProducer()
+    if df.empty:
+        return 0
+
+    producer = get_producer(topic=KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS)
     team_ids = df["team_id"].to_numpy()
-    session_ids = df["session_id_v7"].to_numpy()
+    session_ids = df["session_id"].to_numpy()
+    distinct_ids = df["distinct_id"].to_numpy()
+    min_first_timestamps = df["min_first_timestamp"].to_numpy()
     rows_published = 0
-    for team_id, session_id, score in zip(team_ids, session_ids, scores, strict=True):
+    for team_id, session_id, distinct_id, min_first_timestamp, score in zip(
+        team_ids, session_ids, distinct_ids, min_first_timestamps, scores, strict=True
+    ):
         producer.produce(
-            sql=INSERT_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE_SQL,
-            topic=KAFKA_CLICKHOUSE_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE,
-            data={
-                "team_id": int(team_id),
-                "session_id_v7": str(int(session_id)),
-                "interestingness_score": float(score),
-            },
+            topic=KAFKA_CLICKHOUSE_SESSION_REPLAY_EVENTS,
+            data=_build_partial_row(
+                team_id=int(team_id),
+                session_id=str(session_id),
+                distinct_id=str(distinct_id),
+                min_first_timestamp=pd.Timestamp(min_first_timestamp).to_pydatetime(),
+                score=float(score),
+            ),
         )
         rows_published += 1
 
-    if rows_published:
-        # Flush the singleton sync producer for this topic so we don't ack the
-        # activity to the workflow before librdkafka has actually delivered every
-        # message. In TEST mode the flush is a no-op (`sync_execute` already ran).
-        get_producer(topic=KAFKA_CLICKHOUSE_RAW_SESSIONS_V3_INTERESTINGNESS_SCORE).flush(
-            timeout=KAFKA_PRODUCE_FLUSH_TIMEOUT_S
-        )
+    # Flush so we don't ack the activity to the workflow before librdkafka has
+    # actually delivered every message.
+    producer.flush(timeout=KAFKA_PRODUCE_FLUSH_TIMEOUT_S)
 
     return rows_published
 

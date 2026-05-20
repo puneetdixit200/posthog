@@ -25,7 +25,7 @@ class ScoreSessionsBatchInputs:
 class ChunkSpec:
     """Identifies one hash-partitioned slice of unscored sessions.
 
-    `chunk_id` and `of_chunks` define a `cityHash64(session_id_v7) % of_chunks`
+    `chunk_id` and `of_chunks` define a `cityHash64(session_id) % of_chunks`
     bucket. The activity that receives this re-queries CH for its slice — the
     spec carries no session data, so it's safe to fan out hundreds of these
     in a single workflow without payload pressure.

@@ -139,14 +139,15 @@ class TestFeatureColumnsInSelectParser:
         assert len(aliases) == len(set(aliases)), f"Duplicate aliases in SQL: {aliases}"
 
     def test_ignores_id_columns(self) -> None:
-        # `e.team_id`, `e.session_id_v7`, `e.session_timestamp` are ID
-        # columns from the `eligible_sessions` CTE alias — they must not
+        # `e.team_id`, `e.session_id`, `e.distinct_id`, `e.min_first_timestamp`
+        # are ID columns from the `eligible_sessions` CTE alias — they must not
         # show up in the feature list (they're stripped by ID_COLUMNS
         # before predict).
         aliases = feature_columns_in_select(fetch_features_sql())
         assert "team_id" not in aliases
-        assert "session_id_v7" not in aliases
-        assert "session_timestamp" not in aliases
+        assert "session_id" not in aliases
+        assert "distinct_id" not in aliases
+        assert "min_first_timestamp" not in aliases
 
     def test_returns_empty_tuple_on_malformed_input(self) -> None:
         # Defensive: garbage in → empty tuple out, so the parity test fails

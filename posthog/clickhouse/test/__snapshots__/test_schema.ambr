@@ -607,17 +607,6 @@
   
   '''
 # ---
-# name: test_create_kafka_table_with_different_kafka_host[kafka_raw_sessions_v3_interestingness_score]
-  '''
-  CREATE TABLE IF NOT EXISTS kafka_raw_sessions_v3_interestingness_score
-  (
-      team_id Int64,
-      session_id_v7 String,
-      interestingness_score Nullable(Float32)
-  )
-  ENGINE = Kafka(msk_cluster, kafka_topic_list = 'clickhouse_raw_sessions_v3_interestingness_score_test', kafka_group_name = 'group1', kafka_format = 'JSONEachRow')
-  '''
-# ---
 # name: test_create_kafka_table_with_different_kafka_host[kafka_session_replay_events]
   '''
   
@@ -648,6 +637,7 @@
       ai_tags_fixed Array(String),
       ai_tags_freeform Array(String),
       ai_highlighted UInt8,
+      interestingness_score Nullable(Float32),
   ) ENGINE = Kafka(msk_cluster, kafka_topic_list = 'clickhouse_session_replay_events_test', kafka_group_name = 'group1', kafka_format = 'JSONEachRow')
   
   '''
@@ -2345,17 +2335,6 @@
   
   '''
 # ---
-# name: test_create_table_query[kafka_raw_sessions_v3_interestingness_score]
-  '''
-  CREATE TABLE IF NOT EXISTS kafka_raw_sessions_v3_interestingness_score
-  (
-      team_id Int64,
-      session_id_v7 String,
-      interestingness_score Nullable(Float32)
-  )
-  ENGINE = Kafka(msk_cluster, kafka_topic_list = 'clickhouse_raw_sessions_v3_interestingness_score_test', kafka_group_name = 'group1', kafka_format = 'JSONEachRow')
-  '''
-# ---
 # name: test_create_table_query[kafka_session_replay_events]
   '''
   
@@ -2386,6 +2365,7 @@
       ai_tags_fixed Array(String),
       ai_tags_freeform Array(String),
       ai_highlighted UInt8,
+      interestingness_score Nullable(Float32),
   ) ENGINE = Kafka(msk_cluster, kafka_topic_list = 'clickhouse_session_replay_events_test', kafka_group_name = 'group1', kafka_format = 'JSONEachRow')
   
   '''
@@ -4009,23 +3989,9 @@
       emails SimpleAggregateFunction(groupUniqArrayArray(10), Array(String)),
   
       -- Replay
-      has_replay_events SimpleAggregateFunction(max, Boolean),
-  
-      -- Interestingness score between 0 and 1 filled in by posthog/temporal/session_replay/interestingness_scoring_sweep
-      interestingness_score SimpleAggregateFunction(max, Nullable(Float32))
+      has_replay_events SimpleAggregateFunction(max, Boolean)
   ) ENGINE = Distributed('posthog', 'posthog_test', 'sharded_raw_sessions_v3', cityHash64(session_id_v7))
   
-  '''
-# ---
-# name: test_create_table_query[raw_sessions_v3_interestingness_score_mv]
-  '''
-  CREATE MATERIALIZED VIEW IF NOT EXISTS raw_sessions_v3_interestingness_score_mv
-  TO posthog_test.writable_raw_sessions_v3 (team_id, session_id_v7, interestingness_score)
-  AS SELECT
-      team_id,
-      toUInt128(session_id_v7) AS session_id_v7,
-      interestingness_score
-  FROM posthog_test.kafka_raw_sessions_v3_interestingness_score
   '''
 # ---
 # name: test_create_table_query[raw_sessions_v3_mv]
@@ -4397,6 +4363,11 @@
       ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
       -- AI-generated flag indicating the session is highlighted / worth watching
       ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+      -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+      -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+      -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+      -- idempotently (max(0.42, 0.42) = 0.42).
+      interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
   ) ENGINE = Distributed('posthog', 'posthog_test', 'sharded_session_replay_events', sipHash64(distinct_id))
   
   '''
@@ -4427,6 +4398,7 @@
   ,`ai_tags_fixed` SimpleAggregateFunction(groupUniqArrayArray, Array(String))
   ,`ai_tags_freeform` SimpleAggregateFunction(groupUniqArrayArray, Array(String))
   ,`ai_highlighted` SimpleAggregateFunction(max, UInt8)
+  ,`interestingness_score` SimpleAggregateFunction(max, Nullable(Float32))
   )
   AS SELECT
   session_id,
@@ -4467,6 +4439,7 @@
   ,groupUniqArrayArray(ai_tags_fixed) as ai_tags_fixed
   ,groupUniqArrayArray(ai_tags_freeform) as ai_tags_freeform
   ,max(ai_highlighted) as ai_highlighted
+  ,max(interestingness_score) as interestingness_score
   FROM posthog_test.kafka_session_replay_events
   group by session_id, team_id
   
@@ -5587,10 +5560,7 @@
       emails SimpleAggregateFunction(groupUniqArrayArray(10), Array(String)),
   
       -- Replay
-      has_replay_events SimpleAggregateFunction(max, Boolean),
-  
-      -- Interestingness score between 0 and 1 filled in by posthog/temporal/session_replay/interestingness_scoring_sweep
-      interestingness_score SimpleAggregateFunction(max, Nullable(Float32))
+      has_replay_events SimpleAggregateFunction(max, Boolean)
   ,
   
       -- Indexes
@@ -5665,6 +5635,11 @@
       ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
       -- AI-generated flag indicating the session is highlighted / worth watching
       ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+      -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+      -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+      -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+      -- idempotently (max(0.42, 0.42) = 0.42).
+      interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
   ) ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/77f1df52-4b43-11e9-910f-b8ca3a9b9f3e_{shard}/posthog.session_replay_events', '{replica}')
   
       PARTITION BY toYYYYMM(min_first_timestamp)
@@ -6741,10 +6716,7 @@
       emails SimpleAggregateFunction(groupUniqArrayArray(10), Array(String)),
   
       -- Replay
-      has_replay_events SimpleAggregateFunction(max, Boolean),
-  
-      -- Interestingness score between 0 and 1 filled in by posthog/temporal/session_replay/interestingness_scoring_sweep
-      interestingness_score SimpleAggregateFunction(max, Nullable(Float32))
+      has_replay_events SimpleAggregateFunction(max, Boolean)
   ) ENGINE = Distributed('posthog', 'posthog_test', 'sharded_raw_sessions_v3', cityHash64(session_id_v7))
   
   '''
@@ -6804,6 +6776,11 @@
       ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
       -- AI-generated flag indicating the session is highlighted / worth watching
       ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+      -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+      -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+      -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+      -- idempotently (max(0.42, 0.42) = 0.42).
+      interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
   ) ENGINE = Distributed('posthog', 'posthog_test', 'sharded_session_replay_events', sipHash64(distinct_id))
   
   '''
@@ -8662,10 +8639,7 @@
       emails SimpleAggregateFunction(groupUniqArrayArray(10), Array(String)),
   
       -- Replay
-      has_replay_events SimpleAggregateFunction(max, Boolean),
-  
-      -- Interestingness score between 0 and 1 filled in by posthog/temporal/session_replay/interestingness_scoring_sweep
-      interestingness_score SimpleAggregateFunction(max, Nullable(Float32))
+      has_replay_events SimpleAggregateFunction(max, Boolean)
   ,
   
       -- Indexes
@@ -8740,6 +8714,11 @@
       ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
       -- AI-generated flag indicating the session is highlighted / worth watching
       ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+      -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+      -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+      -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+      -- idempotently (max(0.42, 0.42) = 0.42).
+      interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
   ) ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/77f1df52-4b43-11e9-910f-b8ca3a9b9f3e_{shard}/posthog.session_replay_events', '{replica}')
   
       PARTITION BY toYYYYMM(min_first_timestamp)
@@ -9101,6 +9080,11 @@
       ai_tags_freeform SimpleAggregateFunction(groupUniqArrayArray, Array(String)),
       -- AI-generated flag indicating the session is highlighted / worth watching
       ai_highlighted SimpleAggregateFunction(max, UInt8) DEFAULT 0,
+      -- Interestingness score in [0, 1] from the Temporal scoring sweep. Write-once via
+      -- the `max`-on-merge ratchet: real scores never get clobbered by a later NULL
+      -- partial-row insert from another writer, and at-least-once Kafka redelivery merges
+      -- idempotently (max(0.42, 0.42) = 0.42).
+      interestingness_score SimpleAggregateFunction(max, Nullable(Float32)),
   ) ENGINE = Distributed('posthog', 'posthog_test', 'sharded_session_replay_events', sipHash64(distinct_id))
   
   '''

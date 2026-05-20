@@ -376,3 +376,36 @@ ADD_AI_COLUMNS_WRITABLE_SESSION_REPLAY_EVENTS_TABLE_SQL = lambda: ALTER_SESSION_
 ADD_AI_COLUMNS_DISTRIBUTED_SESSION_REPLAY_EVENTS_TABLE_SQL = lambda: ALTER_SESSION_REPLAY_ADD_AI_COLUMNS.format(
     table_name="session_replay_events",
 )
+
+# =========================
+# MIGRATION: Add interestingness_score column written by the Temporal scoring sweep
+# (posthog/temporal/session_replay/interestingness_scoring_sweep). The scorer produces
+# one Kafka message per session containing the score plus identity-values for every
+# other column; the existing session_replay_events_mv merges the score onto the real
+# session row via the AggregatingMergeTree. `max`-on-merge gives write-once semantics
+# (real scores never get clobbered by a later NULL) and makes at-least-once Kafka
+# delivery idempotent.
+# =========================
+
+ALTER_SESSION_REPLAY_ADD_INTERESTINGNESS_SCORE_COLUMN = """
+    ALTER TABLE {table_name}
+        ADD COLUMN IF NOT EXISTS interestingness_score SimpleAggregateFunction(max, Nullable(Float32))
+"""
+
+ADD_INTERESTINGNESS_SCORE_SESSION_REPLAY_EVENTS_TABLE_SQL = (
+    lambda: ALTER_SESSION_REPLAY_ADD_INTERESTINGNESS_SCORE_COLUMN.format(
+        table_name=SESSION_REPLAY_EVENTS_DATA_TABLE(),
+    )
+)
+
+ADD_INTERESTINGNESS_SCORE_WRITABLE_SESSION_REPLAY_EVENTS_TABLE_SQL = (
+    lambda: ALTER_SESSION_REPLAY_ADD_INTERESTINGNESS_SCORE_COLUMN.format(
+        table_name="writable_session_replay_events",
+    )
+)
+
+ADD_INTERESTINGNESS_SCORE_DISTRIBUTED_SESSION_REPLAY_EVENTS_TABLE_SQL = (
+    lambda: ALTER_SESSION_REPLAY_ADD_INTERESTINGNESS_SCORE_COLUMN.format(
+        table_name="session_replay_events",
+    )
+)
