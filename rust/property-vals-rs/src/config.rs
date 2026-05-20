@@ -31,16 +31,32 @@ pub struct Config {
     #[envconfig(default = "500000")]
     pub max_entries_per_partition: usize,
 
-    /// Transactional producer ID. Must be unique per pod and stable across
-    /// restarts (e.g. the K8s pod name). rdkafka allows only one outstanding
-    /// transaction per ID, which pins us to one worker per pod.
-    #[envconfig(default = "property-vals-rs-local")]
+    /// Transactional producer ID for the events worker. Must be unique per
+    /// pod and stable across restarts (e.g. K8s pod name + "-events"). The
+    /// groups worker uses a separate id because rdkafka allows only one
+    /// outstanding transaction per `transactional.id`.
+    #[envconfig(default = "property-vals-rs-local-events")]
     pub kafka_transactional_id: String,
 
     /// How long Kafka will wait on init_transactions, send_offsets_to_transaction,
     /// and commit_transaction calls before timing out the transaction.
     #[envconfig(default = "60")]
     pub kafka_transaction_timeout_secs: u64,
+
+    /// Topic that carries `$groupidentify` messages. Each message is one
+    /// group update with the full property blob.
+    #[envconfig(default = "clickhouse_groups")]
+    pub groups_kafka_consumer_topic: String,
+
+    /// Consumer group for the groups worker. Independent of the events
+    /// consumer group; the two workers are unrelated for Kafka's purposes.
+    #[envconfig(default = "clickhouse-property-vals-rs-groups")]
+    pub groups_kafka_consumer_group: String,
+
+    /// Transactional producer ID for the groups worker. Distinct from
+    /// `kafka_transactional_id` because each producer needs its own id.
+    #[envconfig(default = "property-vals-rs-local-groups")]
+    pub groups_kafka_transactional_id: String,
 
     /// Teams to opt-in or opt-out of property-values aggregation.
     #[envconfig(default = "")]

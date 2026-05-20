@@ -6,21 +6,28 @@ use tracing::{error, info, warn};
 
 use crate::aggregator::Aggregator;
 use crate::app_context::AppContext;
-use crate::fan_out::fan_out;
 use crate::metrics_consts::*;
 use crate::producer::{OffsetSnapshot, Producer};
-use crate::types::Event;
+use crate::types::{IngestableEvent, TupleKey};
 
-/// One worker loop. Single-worker per pod is the deployed shape because the
-/// transactional producer can have only one outstanding transaction per
-/// `transactional.id`, and there's one producer per pod. The lifecycle
-/// manager keeps this honest at the deploy layer (`worker_loop_count = 1`).
-pub async fn worker_loop<P: Producer>(
+/// One worker loop. Each pod runs one worker per input topic. Each worker
+/// owns its own transactional producer (with a distinct `transactional.id`)
+/// because rdkafka allows only one outstanding transaction per id.
+///
+/// Generic over the message type so the events consumer and the groups
+/// consumer can share this code. The caller supplies the per-message
+/// fan-out function.
+pub async fn worker_loop<E, P, F>(
     ctx: Arc<AppContext>,
     consumer: SingleTopicConsumer,
     mut producer: P,
     handle: lifecycle::Handle,
-) {
+    fan_out_fn: F,
+) where
+    E: IngestableEvent,
+    P: Producer,
+    F: Fn(&E) -> Vec<TupleKey>,
+{
     let _guard = handle.process_scope();
 
     let mut aggregator = Aggregator::new();
@@ -47,10 +54,6 @@ pub async fn worker_loop<P: Producer>(
                 return;
             }
             _ = flush_timer.tick() => {
-                // A successful timer tick means the worker is alive and
-                // polling, even if the input topic is quiet. Without this,
-                // a long gap between events would trip the lifecycle stall
-                // detector and the worker would be killed by the manager.
                 handle.report_healthy();
                 flush(
                     &mut aggregator,
@@ -59,17 +62,14 @@ pub async fn worker_loop<P: Producer>(
                     FLUSH_REASON_TIMER,
                 ).await;
             }
-            recv = consumer.json_recv::<Event>() => {
-                // Report healthy regardless of branch outcome. Reaching this
-                // arm means the rdkafka consumer poll resolved, which is the
-                // signal of a live worker even when no event was returned.
+            recv = consumer.json_recv::<E>() => {
                 handle.report_healthy();
                 match recv {
                     Ok((event, offset)) => {
                         metrics::counter!(EVENTS_RECEIVED).increment(1);
 
-                        if ctx.should_process(event.team_id) {
-                            let tuples = fan_out(&event);
+                        if ctx.should_process(event.team_id()) {
+                            let tuples = fan_out_fn(&event);
                             metrics::counter!(TUPLES_AGGREGATED).increment(tuples.len() as u64);
                             aggregator.record_many(tuples);
                         } else {
@@ -123,8 +123,7 @@ pub(crate) async fn flush<P: Producer>(
         return;
     }
 
-    let snapshot: Vec<(crate::types::TupleKey, u64)> =
-        aggregator.drain().into_iter().collect();
+    let snapshot: Vec<(crate::types::TupleKey, u64)> = aggregator.drain().into_iter().collect();
     let offsets: Vec<OffsetSnapshot> = pending_offsets.values().cloned().collect();
 
     metrics::counter!(FLUSH_TOTAL, "reason" => reason).increment(1);

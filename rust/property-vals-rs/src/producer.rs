@@ -77,8 +77,11 @@ impl AggregatedProducer {
         transaction_timeout: Duration,
         consumer: SingleTopicConsumer,
     ) -> Result<Self, KafkaError> {
-        let inner =
-            TransactionalProducer::from_config(kafka_config, transactional_id, transaction_timeout)?;
+        let inner = TransactionalProducer::from_config(
+            kafka_config,
+            transactional_id,
+            transaction_timeout,
+        )?;
         Ok(Self {
             inner,
             output_topic,

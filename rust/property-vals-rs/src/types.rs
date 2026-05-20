@@ -1,8 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+/// Abstracts the fields the worker needs from any consumed message. Lets
+/// `worker_loop` be generic over event-shaped inputs (`Event`) and group
+/// identify-shaped inputs (`GroupIdentify`) without duplicating the loop.
+pub trait IngestableEvent: serde::de::DeserializeOwned + Send + Sync + 'static {
+    fn team_id(&self) -> i64;
+}
+
 /// One event coming from the `team_event_partitioned_events_json` Kafka topic.
 /// The `*_properties` fields are JSON-encoded strings on the wire; we parse
-/// them lazily during fan-out.
+/// them lazily during fan-out. The `groupN_properties` fields are kept on the
+/// struct for forward compatibility but are not populated by the plugin
+/// server today (see PR description for context).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Event {
     pub team_id: i64,
@@ -22,6 +31,32 @@ pub struct Event {
     pub group3_properties: Option<String>,
     #[serde(default)]
     pub group4_properties: Option<String>,
+}
+
+impl IngestableEvent for Event {
+    fn team_id(&self) -> i64 {
+        self.team_id
+    }
+}
+
+/// One message coming from the `clickhouse_groups` Kafka topic, produced by
+/// the plugin server every time `$groupidentify` fires. Carries the entire
+/// group properties blob for one (team, type, key) combination.
+///
+/// Because group properties are never denormalized onto the events stream,
+/// this topic is the only source of group property values for autocomplete.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupIdentify {
+    pub team_id: i64,
+    pub group_type_index: u8,
+    #[serde(default)]
+    pub group_properties: Option<String>,
+}
+
+impl IngestableEvent for GroupIdentify {
+    fn team_id(&self) -> i64 {
+        self.team_id
+    }
 }
 
 /// The shape of one stored property-value tuple. Used both as the hashmap key

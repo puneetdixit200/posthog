@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::types::{Event, PropertyType, TupleKey};
+use crate::types::{Event, GroupIdentify, PropertyType, TupleKey};
 
 /// Length cap on `property_key` in Unicode codepoints. Matches Django
 /// `PropertyDefinition.name` max_length, which counts codepoints, and matches
@@ -43,6 +43,28 @@ pub fn fan_out(event: &Event) -> Vec<TupleKey> {
         emit_from_blob(event.team_id, PropertyType::Group4, raw, &mut out);
     }
 
+    out
+}
+
+/// Fan one $groupidentify message out to its constituent (group_N, key, value)
+/// tuples. Same length caps and value coercion as the events fan-out so the
+/// produced tuples are guaranteed to match what the storage MV will accept.
+pub fn fan_out_group(event: &GroupIdentify) -> Vec<TupleKey> {
+    let mut out = Vec::new();
+    let property_type = match event.group_type_index {
+        0 => PropertyType::Group0,
+        1 => PropertyType::Group1,
+        2 => PropertyType::Group2,
+        3 => PropertyType::Group3,
+        4 => PropertyType::Group4,
+        // PostHog teams are capped at 5 group types. An out-of-range index
+        // here is a producer bug; dropping silently is correct since we
+        // can't represent it in the storage table either.
+        _ => return out,
+    };
+    if let Some(raw) = &event.group_properties {
+        emit_from_blob(event.team_id, property_type, raw, &mut out);
+    }
     out
 }
 
@@ -234,6 +256,69 @@ mod tests {
     #[test]
     fn empty_object_emits_nothing() {
         let tuples = fan_out(&event("{}"));
+        assert!(tuples.is_empty());
+    }
+
+    fn group_identify(group_type_index: u8, properties: &str) -> GroupIdentify {
+        GroupIdentify {
+            team_id: 2,
+            group_type_index,
+            group_properties: Some(properties.to_string()),
+        }
+    }
+
+    #[test]
+    fn group_identify_index_0_emits_group_0_type() {
+        let tuples = fan_out_group(&group_identify(0, r#"{"plan":"enterprise"}"#));
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(tuples[0].property_type, PropertyType::Group0);
+        assert_eq!(tuples[0].property_key, "plan");
+        assert_eq!(tuples[0].property_value, "enterprise");
+    }
+
+    #[test]
+    fn group_identify_index_4_emits_group_4_type() {
+        let tuples = fan_out_group(&group_identify(4, r#"{"region":"us-east"}"#));
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(tuples[0].property_type, PropertyType::Group4);
+    }
+
+    #[test]
+    fn group_identify_index_out_of_range_drops() {
+        let tuples = fan_out_group(&group_identify(5, r#"{"plan":"enterprise"}"#));
+        assert!(tuples.is_empty());
+    }
+
+    #[test]
+    fn group_identify_missing_properties_drops() {
+        let g = GroupIdentify {
+            team_id: 2,
+            group_type_index: 0,
+            group_properties: None,
+        };
+        assert!(fan_out_group(&g).is_empty());
+    }
+
+    #[test]
+    fn group_identify_applies_codepoint_caps() {
+        // Same caps as fan_out: 401-codepoint key dropped, 256-codepoint
+        // value dropped.
+        let big_key = "k".repeat(401);
+        let big_value = "v".repeat(256);
+        let json = format!(
+            "{{\"{}\":\"ok\",\"k\":\"{}\",\"ok\":\"yes\"}}",
+            big_key, big_value
+        );
+        let tuples = fan_out_group(&group_identify(0, &json));
+        // Only the "ok":"yes" pair survives.
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(tuples[0].property_key, "ok");
+        assert_eq!(tuples[0].property_value, "yes");
+    }
+
+    #[test]
+    fn group_identify_unparseable_drops() {
+        let tuples = fan_out_group(&group_identify(0, "not valid json"));
         assert!(tuples.is_empty());
     }
 }
