@@ -4518,7 +4518,7 @@ class SignalSourceProduct(StrEnum):
     CONVERSATIONS = "conversations"
     ERROR_TRACKING = "error_tracking"
     ENDPOINTS = "endpoints"
-    SIGNALS_AGENT = "signals_agent"
+    SIGNALS_SCOUT = "signals_scout"
 
 
 class SignalSourceType(StrEnum):
