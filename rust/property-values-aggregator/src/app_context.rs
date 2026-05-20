@@ -2,11 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::{Config, TeamFilterMode, TeamList};
-use crate::producer::AggregatedProducer;
+use crate::producer::Producer;
 
-/// Shared state handed to every worker loop.
+/// Shared state handed to every worker loop. The producer is type-erased
+/// (`Arc<dyn Producer>`) so tests can inject a mock without touching
+/// AppContext's shape.
 pub struct AppContext {
-    pub producer: Arc<AggregatedProducer>,
+    pub producer: Arc<dyn Producer>,
     pub filter_mode: TeamFilterMode,
     pub filtered_teams: TeamList,
     pub flush_interval: Duration,
@@ -15,9 +17,9 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub fn new(config: &Config, producer: AggregatedProducer) -> Self {
+    pub fn new(config: &Config, producer: Arc<dyn Producer>) -> Self {
         Self {
-            producer: Arc::new(producer),
+            producer,
             filter_mode: config.filter_mode,
             filtered_teams: config.filtered_teams.clone(),
             flush_interval: Duration::from_secs(config.flush_interval_secs),

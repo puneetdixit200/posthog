@@ -74,7 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let consumer = SingleTopicConsumer::new(config.kafka.clone(), config.consumer.clone())?;
     let raw_producer = create_kafka_producer(&config.kafka, worker_handle.clone()).await?;
-    let producer = AggregatedProducer::new(raw_producer, config.output_topic.clone());
+    let producer: Arc<dyn property_values_aggregator::producer::Producer> = Arc::new(
+        AggregatedProducer::new(raw_producer, config.output_topic.clone()),
+    );
 
     let ctx = Arc::new(AppContext::new(&config, producer));
 

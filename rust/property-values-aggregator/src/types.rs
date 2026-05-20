@@ -64,11 +64,12 @@ impl PropertyType {
 
 /// One outgoing message produced to `clickhouse_property_values` per unique
 /// tuple per flush window. The CH Kafka engine table parses this as JSONEachRow.
+/// Owned so the producer helper can take it by value into rdkafka.
 #[derive(Debug, Clone, Serialize)]
-pub struct OutputMessage<'a> {
+pub struct OutputMessage {
     pub team_id: i64,
-    pub property_type: &'a str,
-    pub property_key: &'a str,
-    pub property_value: &'a str,
+    pub property_type: String,
+    pub property_key: String,
+    pub property_value: String,
     pub property_count: u64,
 }

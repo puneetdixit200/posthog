@@ -26,6 +26,13 @@ impl Aggregator {
         }
     }
 
+    /// Increment by an arbitrary count. Used by the flush-failure restore
+    /// path to merge a previously drained snapshot back into the live state
+    /// without re-counting one event at a time.
+    pub fn add(&mut self, tuple: TupleKey, count: u64) {
+        *self.counts.entry(tuple).or_insert(0) += count;
+    }
+
     pub fn len(&self) -> usize {
         self.counts.len()
     }
@@ -98,6 +105,27 @@ mod tests {
 
         let second = agg.drain();
         assert!(second.is_empty());
+    }
+
+    #[test]
+    fn add_increments_by_count() {
+        let mut agg = Aggregator::new();
+        agg.add(tuple(2, "$browser", "Chrome"), 5);
+        agg.add(tuple(2, "$browser", "Chrome"), 3);
+
+        let drained = agg.drain();
+        assert_eq!(drained[&tuple(2, "$browser", "Chrome")], 8);
+    }
+
+    #[test]
+    fn add_merges_with_existing_record_counts() {
+        let mut agg = Aggregator::new();
+        agg.record(tuple(2, "$browser", "Chrome"));
+        agg.record(tuple(2, "$browser", "Chrome"));
+        agg.add(tuple(2, "$browser", "Chrome"), 4);
+
+        let drained = agg.drain();
+        assert_eq!(drained[&tuple(2, "$browser", "Chrome")], 6);
     }
 
     #[test]
