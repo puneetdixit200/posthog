@@ -2829,34 +2829,37 @@ def create_team(organization: Organization, name: str = "Test team", timezone: s
 
 
 class TestTeamAPI(team_api_test_factory()):  # type: ignore
-    def test_experiments_config_patch_requires_admin(self):
-        response = self.client.patch(
-            f"/api/environments/{self.team.id}/experiments_config/",
-            {"experiment_precomputation_enabled": True},
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-        config = TeamExperimentsConfig.objects.filter(team=self.team).first()
-        assert config is None or config.experiment_precomputation_enabled is False
-
-    def test_experiments_config_patch_allows_admin(self):
-        self.organization_membership.level = OrganizationMembership.Level.ADMIN
+    @parameterized.expand(
+        [
+            ("member_get_allowed", OrganizationMembership.Level.MEMBER, "GET", status.HTTP_200_OK, False),
+            ("member_patch_forbidden", OrganizationMembership.Level.MEMBER, "PATCH", status.HTTP_403_FORBIDDEN, False),
+            ("admin_patch_allowed", OrganizationMembership.Level.ADMIN, "PATCH", status.HTTP_200_OK, True),
+        ]
+    )
+    def test_experiments_config_permissions(
+        self,
+        _name: str,
+        level: OrganizationMembership.Level,
+        method: str,
+        expected_status: int,
+        expected_precomputation_after: bool,
+    ):
+        self.organization_membership.level = level
         self.organization_membership.save()
 
-        response = self.client.patch(
-            f"/api/environments/{self.team.id}/experiments_config/",
-            {"experiment_precomputation_enabled": True},
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["experiment_precomputation_enabled"], True)
+        url = f"/api/environments/{self.team.id}/experiments_config/"
+        if method == "PATCH":
+            response = self.client.patch(url, {"experiment_precomputation_enabled": True})
+        else:
+            response = self.client.get(url)
 
-        config = TeamExperimentsConfig.objects.get(team=self.team)
-        assert config.experiment_precomputation_enabled is True
+        self.assertEqual(response.status_code, expected_status)
 
-    def test_experiments_config_get_allows_member(self):
-        response = self.client.get(f"/api/environments/{self.team.id}/experiments_config/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("experiment_precomputation_enabled", response.json())
+        config = TeamExperimentsConfig.objects.filter(team=self.team).first()
+        if expected_precomputation_after:
+            assert config is not None and config.experiment_precomputation_enabled is True
+        else:
+            assert config is None or config.experiment_precomputation_enabled is False
 
     def test_teams_outside_personal_api_key_scoped_teams_not_listed(self):
         other_team_in_project = Team.objects.create(organization=self.organization, project=self.project)
