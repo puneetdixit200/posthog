@@ -30,8 +30,8 @@ function AITrainingDescription({ isHipaa, isLocked }: { isHipaa: boolean; isLock
                 customers. Your data stays with PostHog.
             </p>
             <p className="mt-2">
-                This is distinct from the <i>AI data analysis</i> consent under General, which governs whether PostHog
-                AI is allowed to process your data to answer user queries at request time.
+                This is distinct from the <i>Third-party AI service providers</i> consent under General, which governs
+                whether PostHog AI is allowed to process your data to answer user queries at request time.
             </p>
         </div>
     )

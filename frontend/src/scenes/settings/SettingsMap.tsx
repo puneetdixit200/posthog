@@ -1458,7 +1458,7 @@ export const SETTINGS_MAP: SettingSection[] = [
             },
             {
                 id: 'organization-ai-consent',
-                title: 'PostHog AI data analysis',
+                title: 'Third-party AI service providers',
                 description: (
                     <>
                         PostHog AI features, such as the PostHog AI chat, use{' '}
@@ -1470,7 +1470,7 @@ export const SETTINGS_MAP: SettingSection[] = [
                         This <i>can</i> involve transfer of identifying user data, so we ask for your org-wide consent
                         below.
                         <br />
-                        <strong>Your data will not be used for training models.</strong>
+                        <strong>Your data will not be used for training third-party models.</strong>
                         <br />
                         <br />
                         <AIHipaaDisclaimer />
