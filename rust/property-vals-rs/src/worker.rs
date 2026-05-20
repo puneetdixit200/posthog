@@ -151,7 +151,6 @@ mod tests {
     use crate::types::{PropertyType, TupleKey};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
-    use std::time::Duration;
 
     /// Mock producer that records each (items, offsets) call and can be
     /// configured to fail on specific call indices.
@@ -256,7 +255,6 @@ mod tests {
         assert!(pending.is_empty());
         assert_eq!(producer.call_count(), 1);
         assert_eq!(producer.last_items().len(), 5);
-        // Offsets are passed to the producer in the same call as items.
         assert_eq!(producer.last_offsets().len(), 2);
     }
 
@@ -305,9 +303,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_aggregator_with_pending_offsets_still_calls_producer() {
-        // Filter-only window: no counts, only offsets. The producer is still
-        // invoked so it can run a transaction that commits the offsets
-        // atomically with the (empty) produce.
         let mut agg = Aggregator::new();
         let mut pending: HashMap<i32, OffsetSnapshot> = HashMap::new();
         pending.insert(0, snapshot(0, 7));
@@ -332,8 +327,6 @@ mod tests {
 
     #[tokio::test]
     async fn restored_counts_merge_with_new_counts_in_next_window() {
-        // Atomic commit semantics + restore: a new event on the same tuple
-        // after a failed flush must merge with the restored count.
         let mut agg = Aggregator::new();
         agg.record(tuple(2, "k1", "v1"));
 
@@ -354,8 +347,6 @@ mod tests {
 
     #[tokio::test]
     async fn produce_and_commit_receives_items_and_offsets_atomically() {
-        // Verify both arrive in the same call. This is the property that
-        // makes the system exactly-once.
         let mut agg = Aggregator::new();
         agg.record(tuple(2, "k1", "v1"));
 
@@ -389,11 +380,5 @@ mod tests {
         assert_eq!(agg.len(), 1);
         assert_eq!(pending.len(), 1);
         assert_eq!(producer.call_count(), 3);
-    }
-
-    #[allow(dead_code)]
-    fn touch_unused_duration() {
-        // Keep `Duration` import referenced for clarity in test code.
-        let _ = Duration::from_secs(0);
     }
 }

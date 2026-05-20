@@ -58,20 +58,23 @@ pub struct Config {
     #[envconfig(default = "property-vals-rs-local-groups")]
     pub groups_kafka_transactional_id: String,
 
-    /// Teams to opt-in or opt-out of property-values aggregation.
+    /// Teams that are always processed regardless of `rollout_percentage`.
+    /// Use to pin specific teams during testing or keep a hand-picked
+    /// team included while ramping the rest of the fleet.
     #[envconfig(default = "")]
-    pub filtered_teams: TeamList,
+    pub allowed_teams: TeamList,
 
-    /// Whether the team list above filters teams IN or OUT of processing.
-    /// `opt_out` with an empty list means "process every team".
-    #[envconfig(default = "opt_out")]
-    pub filter_mode: TeamFilterMode,
+    /// Teams that are never processed regardless of allow-list or rollout.
+    /// `blocked_teams` wins over `allowed_teams` on overlap, since "drop
+    /// this team" is a safer default than "process this team".
+    #[envconfig(default = "")]
+    pub blocked_teams: TeamList,
 
-    /// In `opt_out` mode, the percentage of teams (0-100) to process,
-    /// chosen by a stable hash of `team_id`. Lets us ramp gradually
-    /// without enumerating IDs: 1 → roughly 1% of teams, 100 → all teams.
-    /// Ignored when `filter_mode = opt_in` (the team list is the rollout
-    /// in that mode).
+    /// Percentage of teams (0-100) to process, picked by a stable hash
+    /// of `team_id`. `allowed_teams` overrides this; `blocked_teams` still
+    /// excludes. Default in code is 100 (process all) so `cargo run`
+    /// against the local stack does something visible. Production charts
+    /// set this to 0 and ramp via overrides.
     #[envconfig(default = "100")]
     pub rollout_percentage: u8,
 
@@ -102,33 +105,6 @@ impl FromStr for TeamList {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TeamFilterMode {
-    OptIn,
-    OptOut,
-}
-
-impl FromStr for TeamFilterMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().trim() {
-            "opt_in" | "opt-in" | "optin" => Ok(TeamFilterMode::OptIn),
-            "opt_out" | "opt-out" | "optout" => Ok(TeamFilterMode::OptOut),
-            _ => Err(format!("Invalid team filter mode: {s}")),
-        }
-    }
-}
-
-impl TeamFilterMode {
-    pub fn should_process(&self, list: &[i64], team_id: i64) -> bool {
-        match self {
-            TeamFilterMode::OptIn => list.contains(&team_id),
-            TeamFilterMode::OptOut => !list.contains(&team_id),
-        }
-    }
-}
-
 impl Config {
     pub fn init_with_defaults() -> Result<Self, envconfig::Error> {
         // Default to clickhouse_events_json so cargo run works against the local
@@ -151,33 +127,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn opt_out_with_empty_list_processes_all_teams() {
-        let mode = TeamFilterMode::OptOut;
-        assert!(mode.should_process(&[], 1));
-        assert!(mode.should_process(&[], 999));
-    }
-
-    #[test]
-    fn opt_in_with_empty_list_processes_no_teams() {
-        let mode = TeamFilterMode::OptIn;
-        assert!(!mode.should_process(&[], 1));
-    }
-
-    #[test]
-    fn opt_in_includes_only_listed_teams() {
-        let mode = TeamFilterMode::OptIn;
-        assert!(mode.should_process(&[2], 2));
-        assert!(!mode.should_process(&[2], 3));
-    }
-
-    #[test]
-    fn opt_out_excludes_listed_teams() {
-        let mode = TeamFilterMode::OptOut;
-        assert!(!mode.should_process(&[2], 2));
-        assert!(mode.should_process(&[2], 3));
-    }
 
     #[test]
     fn team_list_parses() {

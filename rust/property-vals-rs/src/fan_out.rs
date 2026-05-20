@@ -57,9 +57,6 @@ pub fn fan_out_group(event: &GroupIdentify) -> Vec<TupleKey> {
         2 => PropertyType::Group2,
         3 => PropertyType::Group3,
         4 => PropertyType::Group4,
-        // PostHog teams are capped at 5 group types. An out-of-range index
-        // here is a producer bug; dropping silently is correct since we
-        // can't represent it in the storage table either.
         _ => return out,
     };
     if let Some(raw) = &event.group_properties {

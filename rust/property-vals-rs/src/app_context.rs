@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use siphasher::sip::SipHasher13;
 
-use crate::config::{Config, TeamFilterMode, TeamList};
+use crate::config::{Config, TeamList};
 
 pub struct AppContext {
-    pub filter_mode: TeamFilterMode,
-    pub filtered_teams: TeamList,
+    pub allowed_teams: TeamList,
+    pub blocked_teams: TeamList,
     pub rollout_percentage: u8,
     pub flush_interval: Duration,
     pub max_entries_per_partition: usize,
@@ -16,8 +16,8 @@ pub struct AppContext {
 impl AppContext {
     pub fn new(config: &Config) -> Self {
         Self {
-            filter_mode: config.filter_mode,
-            filtered_teams: config.filtered_teams.clone(),
+            allowed_teams: config.allowed_teams.clone(),
+            blocked_teams: config.blocked_teams.clone(),
             rollout_percentage: config.rollout_percentage,
             flush_interval: Duration::from_secs(config.flush_interval_secs),
             max_entries_per_partition: config.max_entries_per_partition,
@@ -25,16 +25,13 @@ impl AppContext {
     }
 
     pub fn should_process(&self, team_id: i64) -> bool {
-        match self.filter_mode {
-            // Opt-in: only teams explicitly named. Rollout is ignored because
-            // the list itself is the rollout in this mode.
-            TeamFilterMode::OptIn => self.filtered_teams.teams.contains(&team_id),
-            // Opt-out: process every team except those explicitly named,
-            // further narrowed by the rollout percentage.
-            TeamFilterMode::OptOut => {
-                !self.filtered_teams.teams.contains(&team_id) && self.team_in_rollout(team_id)
-            }
+        if self.blocked_teams.teams.contains(&team_id) {
+            return false;
         }
+        if self.allowed_teams.teams.contains(&team_id) {
+            return true;
+        }
+        self.team_in_rollout(team_id)
     }
 
     fn team_in_rollout(&self, team_id: i64) -> bool {
@@ -44,9 +41,6 @@ impl AppContext {
         if self.rollout_percentage == 0 {
             return false;
         }
-        // SipHash13 with a fixed (zeroed) key gives a stable bucket assignment
-        // across pods and restarts: same team always lands in the same bucket
-        // at a given percentage, so ramps are deterministic.
         let mut hasher = SipHasher13::new();
         team_id.hash(&mut hasher);
         (hasher.finish() % 100) < self.rollout_percentage as u64
@@ -57,10 +51,10 @@ impl AppContext {
 mod tests {
     use super::*;
 
-    fn ctx(filter_mode: TeamFilterMode, teams: Vec<i64>, rollout_percentage: u8) -> AppContext {
+    fn ctx(allowed: Vec<i64>, blocked: Vec<i64>, rollout_percentage: u8) -> AppContext {
         AppContext {
-            filter_mode,
-            filtered_teams: TeamList { teams },
+            allowed_teams: TeamList { teams: allowed },
+            blocked_teams: TeamList { teams: blocked },
             rollout_percentage,
             flush_interval: Duration::from_secs(0),
             max_entries_per_partition: 0,
@@ -68,47 +62,50 @@ mod tests {
     }
 
     #[test]
-    fn opt_in_only_processes_listed_teams() {
-        let c = ctx(TeamFilterMode::OptIn, vec![2], 100);
-        assert!(c.should_process(2));
-        assert!(!c.should_process(3));
-        assert!(!c.should_process(999));
-    }
-
-    #[test]
-    fn opt_in_ignores_rollout_percentage() {
-        // Team 2 is explicitly listed, so it must be processed regardless
-        // of rollout. The opt-in list is the rollout in this mode.
-        let c = ctx(TeamFilterMode::OptIn, vec![2], 0);
-        assert!(c.should_process(2));
-    }
-
-    #[test]
-    fn opt_out_with_empty_list_and_full_rollout_processes_all() {
-        let c = ctx(TeamFilterMode::OptOut, vec![], 100);
+    fn empty_lists_full_rollout_processes_all() {
+        let c = ctx(vec![], vec![], 100);
         for team in [1, 2, 999, 12345] {
             assert!(c.should_process(team), "should process team {team}");
         }
     }
 
     #[test]
-    fn opt_out_zero_rollout_drops_everyone() {
-        let c = ctx(TeamFilterMode::OptOut, vec![], 0);
+    fn empty_lists_zero_rollout_drops_all() {
+        let c = ctx(vec![], vec![], 0);
         for team in [1, 2, 999] {
             assert!(!c.should_process(team));
         }
     }
 
     #[test]
-    fn opt_out_blocks_blacklisted_teams_regardless_of_rollout() {
-        let c = ctx(TeamFilterMode::OptOut, vec![999], 100);
+    fn allowed_team_always_processes_even_at_zero_rollout() {
+        let c = ctx(vec![2], vec![], 0);
+        assert!(c.should_process(2));
+        assert!(!c.should_process(3));
+    }
+
+    #[test]
+    fn blocked_team_never_processes_even_at_full_rollout() {
+        let c = ctx(vec![], vec![999], 100);
         assert!(!c.should_process(999));
         assert!(c.should_process(1));
     }
 
     #[test]
+    fn block_list_overrides_allow_list_on_overlap() {
+        let c = ctx(vec![2], vec![2], 100);
+        assert!(!c.should_process(2));
+    }
+
+    #[test]
+    fn allowed_team_processes_at_partial_rollout_when_hash_misses() {
+        let c = ctx(vec![999_999], vec![], 1);
+        assert!(c.should_process(999_999));
+    }
+
+    #[test]
     fn rollout_is_deterministic_per_team_id() {
-        let c = ctx(TeamFilterMode::OptOut, vec![], 50);
+        let c = ctx(vec![], vec![], 50);
         let first = c.should_process(12345);
         for _ in 0..100 {
             assert_eq!(c.should_process(12345), first);
@@ -117,10 +114,7 @@ mod tests {
 
     #[test]
     fn rollout_percentage_approximates_target_share() {
-        // 10% rollout across 10k synthetic team_ids should land within a
-        // few percentage points of 1000. SipHash + modulo is well-behaved
-        // enough that the tolerance can be tight without being flaky.
-        let c = ctx(TeamFilterMode::OptOut, vec![], 10);
+        let c = ctx(vec![], vec![], 10);
         let included = (1..=10_000).filter(|t| c.should_process(*t)).count();
         assert!(
             (900..=1100).contains(&included),
