@@ -4,6 +4,8 @@ from drf_spectacular.utils import extend_schema_field
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers
 
+from posthog.api.tagged_item import TaggedItemSerializerMixin
+
 from products.customer_analytics.backend.models import Account, CustomerJourney, CustomerProfileConfig
 from products.customer_analytics.backend.models.account import AccountProperties
 
@@ -114,7 +116,9 @@ class CustomerJourneySerializer(serializers.ModelSerializer):
             raise Conflict("A customer journey already exists for this insight.")
 
 
-class AccountSerializer(serializers.ModelSerializer):
+class AccountSerializer(TaggedItemSerializerMixin, serializers.ModelSerializer):
+    """A Customer Analytics account — a logical grouping used to assign customer-success ownership."""
+
     name = serializers.CharField(
         max_length=400,
         help_text="Human-readable name of the account.",
@@ -135,6 +139,11 @@ class AccountSerializer(serializers.ModelSerializer):
             "Defaults to an empty object. Unknown keys are rejected."
         ),
     )
+    tags = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="Tag names attached to the account. Pass a list to replace existing tags.",
+    )
 
     class Meta:
         model = Account
@@ -143,6 +152,7 @@ class AccountSerializer(serializers.ModelSerializer):
             "name",
             "external_id",
             "properties",
+            "tags",
             "created_at",
             "created_by",
             "updated_at",

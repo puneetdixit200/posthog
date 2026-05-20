@@ -79,6 +79,9 @@ export namespace Schemas {
     } | null;
     } | null;
 
+    /**
+     * A Customer Analytics account — a logical grouping used to assign customer-success ownership.
+     */
     export interface Account {
       readonly id: string;
       /**
@@ -97,6 +100,8 @@ export namespace Schemas {
          * @nullable
          */
       properties?: AccountProperties;
+      /** Tag names attached to the account. Pass a list to replace existing tags. */
+      tags?: string[];
       readonly created_at: string;
       /** @nullable */
       readonly created_by: number | null;
@@ -25393,6 +25398,9 @@ export namespace Schemas {
     } | null;
     } | null;
 
+    /**
+     * A Customer Analytics account — a logical grouping used to assign customer-success ownership.
+     */
     export interface PatchedAccount {
       readonly id?: string;
       /**
@@ -25411,6 +25419,8 @@ export namespace Schemas {
          * @nullable
          */
       properties?: PatchedAccountProperties;
+      /** Tag names attached to the account. Pass a list to replace existing tags. */
+      tags?: string[];
       readonly created_at?: string;
       /** @nullable */
       readonly created_by?: number | null;

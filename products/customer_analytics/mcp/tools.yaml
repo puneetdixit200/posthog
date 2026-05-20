@@ -21,13 +21,18 @@ tools:
         title: Create account
         description: >
             Create a new Customer Analytics account. An account is a logical container for assigning ownership across
-            the customer-success org. Provide `name` (required), optional `external_id` (CRM ID or similar), and
-            optional `properties` to set role assignments (`csm`, `account_executive`, `account_owner`).
+            the customer-success org. Provide `name` (required), optional `external_id` (CRM ID or similar), optional
+            `properties` to set role assignments (`csm`, `account_executive`, `account_owner`), and optional `tags` to
+            categorize the account.
         param_overrides:
             properties:
                 description: >
                     Typed account properties. `csm`, `account_executive`, `account_owner` are role assignments — each
                     takes `{id, email}` of an existing user. All three are optional.
+            tags:
+                description: >
+                    Tag names to attach to the account. Tags are created on demand if they do not already exist for the
+                    team.
         feature_flag: customer-analytics-csp
     accounts-destroy:
         operation: accounts_destroy
@@ -55,7 +60,7 @@ tools:
         title: List accounts
         description: >
             List Customer Analytics accounts in the project, ordered by most recently created. Each result includes the
-            account `id`, `name`, `external_id`, typed `properties` (csm, account_executive, account_owner), and
+            account `id`, `name`, `external_id`, typed `properties` (csm, account_executive, account_owner), `tags`, and
             creation/update metadata. Use `accounts-retrieve` for a single account by id.
         feature_flag: customer-analytics-csp
     accounts-partial-update:
@@ -70,13 +75,17 @@ tools:
         title: Update account
         description: >
             Update fields on an existing Customer Analytics account. Accepts a subset of fields; unspecified fields are
-            left unchanged.
+            left unchanged. Pass `tags` to replace the full set of tags on the account.
         param_overrides:
             properties:
                 description: >
                     Typed account properties. The server replaces the `properties` object as a whole, so include any
                     existing values you want to preserve. Supported keys: `csm`, `account_executive`, `account_owner`,
                     each taking `{id, email}` of an existing user.
+            tags:
+                description: >
+                    Tag names to set on the account. Replaces the full existing tag set — pass the complete list, not a
+                    delta. Tags are created on demand if they do not already exist for the team.
         feature_flag: customer-analytics-csp
     accounts-retrieve:
         operation: accounts_retrieve
@@ -90,7 +99,7 @@ tools:
         title: Get account
         description: >
             Fetch a single Customer Analytics account by id. Returns the full account including typed `properties` (csm,
-            account_executive, account_owner assignments).
+            account_executive, account_owner assignments) and `tags`.
         feature_flag: customer-analytics-csp
     accounts-update:
         operation: accounts_update
