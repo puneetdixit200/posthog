@@ -624,7 +624,8 @@ export function ResumeExperimentModal(): JSX.Element {
 }
 
 export function FinishExperimentModal(): JSX.Element {
-    const { experiment, isSingleVariantShipped, shippedVariantKey } = useValues(experimentLogic)
+    const { experiment, isSingleVariantShipped, shippedVariantKey, recommendedVariantToKeep } =
+        useValues(experimentLogic)
     const { finishExperiment, endExperimentWithoutShipping, restoreUnmodifiedExperiment } = useActions(experimentLogic)
     const { closeFinishExperimentModal } = useActions(modalsLogic)
     const { isFinishExperimentModalOpen } = useValues(modalsLogic)
@@ -660,6 +661,9 @@ export function FinishExperimentModal(): JSX.Element {
             finishExperiment({
                 selectedVariantKey,
                 releaseToEveryone: showReleaseModeChoice ? releaseToEveryone : true,
+                keptVariantWasRecommended: recommendedVariantToKeep
+                    ? selectedVariantKey === recommendedVariantToKeep.variantKey
+                    : null,
             })
         }
     }

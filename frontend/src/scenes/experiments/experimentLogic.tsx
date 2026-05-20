@@ -77,10 +77,12 @@ import type { experimentLogicType } from './experimentLogicType'
 import { experimentSceneLogic } from './experimentSceneLogic'
 import {
     experimentsLogic,
+    getRecommendedVariantToKeep,
     getShippedVariantKey,
     hasEnded,
     isLaunched,
     isSingleVariantShipped,
+    type RecommendedVariantToKeep,
 } from './experimentsLogic'
 import { holdoutsLogic } from './holdoutsLogic'
 import {
@@ -660,10 +662,12 @@ export const experimentLogic = kea<experimentLogicType>([
         finishExperiment: ({
             selectedVariantKey,
             releaseToEveryone,
+            keptVariantWasRecommended,
         }: {
             selectedVariantKey: string
             releaseToEveryone: boolean
-        }) => ({ selectedVariantKey, releaseToEveryone }),
+            keptVariantWasRecommended?: boolean | null
+        }) => ({ selectedVariantKey, releaseToEveryone, keptVariantWasRecommended }),
         pauseExperiment: true,
         resumeExperiment: true,
         archiveExperiment: true,
@@ -1690,7 +1694,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 })
             }
         },
-        finishExperiment: async ({ selectedVariantKey, releaseToEveryone }) => {
+        finishExperiment: async ({ selectedVariantKey, releaseToEveryone, keptVariantWasRecommended }) => {
             try {
                 const response: Experiment = await api.create(
                     `/api/projects/${values.currentProjectId}/experiments/${values.experimentId}/ship_variant`,
@@ -1699,6 +1703,7 @@ export const experimentLogic = kea<experimentLogicType>([
                         release_to_everyone: releaseToEveryone,
                         conclusion: values.experiment.conclusion,
                         conclusion_comment: values.experiment.conclusion_comment,
+                        kept_variant_was_recommended: keptVariantWasRecommended ?? null,
                     }
                 )
                 actions.setExperiment(response)
@@ -2520,6 +2525,10 @@ export const experimentLogic = kea<experimentLogicType>([
         shippedVariantKey: [
             (s) => [s.experiment],
             (experiment: Experiment): string | null => getShippedVariantKey(experiment),
+        ],
+        recommendedVariantToKeep: [
+            (s) => [s.experiment],
+            (experiment: Experiment): RecommendedVariantToKeep | null => getRecommendedVariantToKeep(experiment),
         ],
         experimentWarning: [
             (s) => [
