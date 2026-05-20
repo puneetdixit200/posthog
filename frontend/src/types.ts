@@ -487,6 +487,10 @@ export interface OrganizationType extends OrganizationBasicType {
     customer_id: string | null
     enforce_2fa: boolean | null
     is_ai_data_processing_approved?: boolean
+    is_ai_training_opted_in?: boolean
+    is_ai_training_locked?: boolean
+    is_ai_training_cta_shown?: boolean
+    is_hipaa?: boolean
     members_can_invite?: boolean
     members_can_use_personal_api_keys: boolean
     allow_publicly_shared_resources: boolean
@@ -4588,12 +4592,6 @@ export interface Experiment {
         aggregation_group_type_index?: integer
         variant_screenshot_media_ids?: Record<string, string[]>
         rollout_percentage?: number
-        /** Present when the experiment was created from an LLM prompt via /create_from_prompt/. */
-        prompt_metadata?: {
-            name: string
-            templates: string[]
-            versions: number[]
-        }
     }
     start_date?: string | null
     end_date?: string | null
@@ -5058,7 +5056,7 @@ export interface SubscriptionType {
     integration_id?: number | null
     target_type: string
     target_value: string
-    frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+    frequency: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly'
     interval: number
     byweekday: WeekdayType[] | null
     bysetpos: number | null
@@ -5301,7 +5299,6 @@ export interface RoleMemberType {
 export type APIScopeObject =
     | 'action'
     | 'access_control'
-    | 'account'
     | 'activity_log'
     | 'alert'
     | 'annotation'

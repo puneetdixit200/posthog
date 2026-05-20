@@ -131,6 +131,8 @@ import { Invites } from './organization/Invites'
 import { Members } from './organization/Members'
 import { OAuthApps } from './organization/OAuthApps'
 import { OrganizationAI } from './organization/OrgAI'
+import { OrganizationAIAnnouncement } from './organization/OrgAIAnnouncement'
+import { OrganizationAITrainingOptOut } from './organization/OrgAITraining'
 import { OrganizationDangerZone } from './organization/OrganizationDangerZone'
 import { OrganizationIntegrations } from './organization/OrganizationIntegrations'
 import { OrganizationSecuritySettings } from './organization/OrganizationSecuritySettings'
@@ -442,7 +444,7 @@ export const SETTINGS_MAP: SettingSection[] = [
                 title: 'Accounts',
                 description: 'Select which group type represents an account in customer analytics.',
                 component: <CustomerAnalyticsAccountConfig />,
-                flag: ['CUSTOMER_ANALYTICS', 'CUSTOMER_ANALYTICS_CSP'],
+                flag: ['CUSTOMER_ANALYTICS', 'POSTHOG_CSP'],
                 keywords: ['accounts', 'group', 'b2b'],
             },
         ],
@@ -1243,7 +1245,7 @@ export const SETTINGS_MAP: SettingSection[] = [
                 id: 'datacapture',
                 title: 'IP data capture configuration',
                 description:
-                    'When enabled, client IP addresses will not be stored with your events. Transformations like GeoIP enrichment and bot detection can still use the IP before it is discarded. Note: this does not apply when Cookieless server hash mode is enabled, which strips the IP before transformations run.',
+                    'When enabled, client IP addresses will not be stored with your events. Transformations like GeoIP enrichment and bot detection can still use the IP before it is discarded.',
                 docsUrl: 'https://posthog.com/docs/privacy',
                 component: <IPCapture />,
                 keywords: ['ip', 'anonymize', 'gdpr', 'privacy', 'geolocation', 'discard'],
@@ -1486,6 +1488,29 @@ export const SETTINGS_MAP: SettingSection[] = [
                     'When enabled, new projects will automatically have "Discard client IP data" turned on. This is recommended for GDPR compliance. Existing projects are not affected.',
                 component: <OrgIPAnonymizationDefault />,
                 keywords: ['ip', 'anonymize', 'gdpr', 'privacy', 'geolocation'],
+            },
+        ],
+    },
+    {
+        level: 'organization',
+        id: 'organization-ai',
+        title: 'AI',
+        flag: 'AI_TRAINING',
+        settings: [
+            {
+                id: 'organization-ai-announcement',
+                title: '',
+                description: '',
+                component: <OrganizationAIAnnouncement />,
+                keywords: ['ai', 'training', 'announcement'],
+            },
+            {
+                id: 'organization-ai-training-opt-out',
+                title: 'AI training',
+                component: <OrganizationAITrainingOptOut />,
+                keywords: ['ai', 'training', 'opt-out', 'opt-in', 'model', 'max'],
+                searchDescription:
+                    'Control whether PostHog can use your data to train AI models. Turning this off disables AI features for your organization.',
             },
         ],
     },
