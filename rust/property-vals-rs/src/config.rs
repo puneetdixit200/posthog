@@ -20,16 +20,15 @@ pub struct Config {
     #[envconfig(default = "clickhouse_property_values")]
     pub output_topic: String,
 
-    /// How long to accumulate per-partition state before flushing to the
-    /// output topic. Each flush emits one message per unique tuple seen
-    /// during the window.
+    /// How long to accumulate aggregator state before flushing. Each flush
+    /// emits one message per unique tuple seen during the window.
     #[envconfig(default = "30")]
     pub flush_interval_secs: u64,
 
-    /// Hard cap on per-partition map size. If reached before the flush timer
-    /// fires, we flush early to bound memory.
+    /// Cap on the worker's in-memory tuple buffer. Hitting this triggers
+    /// an early backpressure flush ahead of the timer.
     #[envconfig(default = "500000")]
-    pub max_entries_per_partition: usize,
+    pub max_buffered_tuples: usize,
 
     /// Transactional producer ID for the events worker. Must be unique per
     /// pod and stable across restarts (e.g. K8s pod name + "-events"). The

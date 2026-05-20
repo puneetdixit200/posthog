@@ -10,7 +10,7 @@ pub struct AppContext {
     pub blocked_teams: TeamList,
     pub rollout_percentage: u8,
     pub flush_interval: Duration,
-    pub max_entries_per_partition: usize,
+    pub max_buffered_tuples: usize,
 }
 
 impl AppContext {
@@ -20,7 +20,7 @@ impl AppContext {
             blocked_teams: config.blocked_teams.clone(),
             rollout_percentage: config.rollout_percentage,
             flush_interval: Duration::from_secs(config.flush_interval_secs),
-            max_entries_per_partition: config.max_entries_per_partition,
+            max_buffered_tuples: config.max_buffered_tuples,
         }
     }
 
@@ -57,7 +57,7 @@ mod tests {
             blocked_teams: TeamList { teams: blocked },
             rollout_percentage,
             flush_interval: Duration::from_secs(0),
-            max_entries_per_partition: 0,
+            max_buffered_tuples: 0,
         }
     }
 

@@ -3,8 +3,7 @@ use serde_json::Value;
 use crate::types::{Event, GroupIdentify, PropertyType, TupleKey};
 
 /// Length cap on `property_key` in Unicode codepoints. Matches Django
-/// `PropertyDefinition.name` max_length, which counts codepoints, and matches
-/// Bloblang `string.length()` semantics on the prior Bento mapping.
+/// `PropertyDefinition.name` max_length.
 pub const MAX_PROPERTY_KEY_LEN: usize = 400;
 
 /// Length cap on `property_value` in Unicode codepoints. Strictly less than
@@ -100,8 +99,6 @@ fn emit_from_blob(team_id: i64, property_type: PropertyType, raw: &str, out: &mu
     }
 }
 
-/// Strings stay strings; everything else gets its canonical JSON-string form
-/// (e.g. `true` -> `"true"`, `42` -> `"42"`, `[1,2]` -> `"[1,2]"`).
 fn coerce_to_string(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),

@@ -85,7 +85,7 @@ pub async fn worker_loop<E, P, F>(
                             },
                         );
 
-                        if aggregator.len() >= ctx.max_entries_per_partition {
+                        if aggregator.len() >= ctx.max_buffered_tuples {
                             flush(
                                 &mut aggregator,
                                 &mut pending_offsets,
