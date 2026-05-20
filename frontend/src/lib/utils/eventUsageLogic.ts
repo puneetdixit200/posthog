@@ -768,6 +768,14 @@ export const eventUsageLogic = kea<eventUsageLogicType>([
         }),
         reportExperimentAiSummaryRequested: (experiment: Experiment) => ({ experiment }),
         reportExperimentSessionReplaySummaryRequested: (experiment: Experiment) => ({ experiment }),
+        reportExperimentRecommendationAccepted: (experiment: Experiment, recommendedVariantKey: string) => ({
+            experiment,
+            recommendedVariantKey,
+        }),
+        reportExperimentRecommendationRejected: (experiment: Experiment, recommendedVariantKey: string) => ({
+            experiment,
+            recommendedVariantKey,
+        }),
         // Taxonomic Filter
         reportTaxonomicFilterCategorySelected: (groupType: TaxonomicFilterGroupType, eventName?: string) => ({
             groupType,
@@ -1765,6 +1773,18 @@ export const eventUsageLogic = kea<eventUsageLogicType>([
         reportExperimentSessionReplaySummaryRequested: ({ experiment }) => {
             posthog.capture('experiment session replay summary requested', {
                 ...getEventPropertiesForExperiment(experiment),
+            })
+        },
+        reportExperimentRecommendationAccepted: ({ experiment, recommendedVariantKey }) => {
+            posthog.capture('experiment recommendation accepted', {
+                ...getEventPropertiesForExperiment(experiment),
+                recommended_variant_key: recommendedVariantKey,
+            })
+        },
+        reportExperimentRecommendationRejected: ({ experiment, recommendedVariantKey }) => {
+            posthog.capture('experiment recommendation rejected', {
+                ...getEventPropertiesForExperiment(experiment),
+                recommended_variant_key: recommendedVariantKey,
             })
         },
         reportPropertyGroupFilterAdded: () => {
