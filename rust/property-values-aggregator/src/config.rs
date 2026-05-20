@@ -102,9 +102,12 @@ impl TeamFilterMode {
 
 impl Config {
     pub fn init_with_defaults() -> Result<Self, envconfig::Error> {
+        // Default to clickhouse_events_json so cargo run works against the local
+        // dev stack with no env overrides. Production charts set
+        // KAFKA_CONSUMER_TOPIC=team_event_partitioned_events_json.
         ConsumerConfig::set_defaults(
             "clickhouse-property-values-aggregator",
-            "team_event_partitioned_events_json",
+            "clickhouse_events_json",
             true,
         );
         Config::init_from_env()
