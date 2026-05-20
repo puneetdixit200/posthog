@@ -47,6 +47,11 @@ pub async fn worker_loop<P: Producer>(
                 return;
             }
             _ = flush_timer.tick() => {
+                // A successful timer tick means the worker is alive and
+                // polling, even if the input topic is quiet. Without this,
+                // a long gap between events would trip the lifecycle stall
+                // detector and the worker would be killed by the manager.
+                handle.report_healthy();
                 flush(
                     &mut aggregator,
                     &mut pending_offsets,
@@ -55,9 +60,12 @@ pub async fn worker_loop<P: Producer>(
                 ).await;
             }
             recv = consumer.json_recv::<Event>() => {
+                // Report healthy regardless of branch outcome. Reaching this
+                // arm means the rdkafka consumer poll resolved, which is the
+                // signal of a live worker even when no event was returned.
+                handle.report_healthy();
                 match recv {
                     Ok((event, offset)) => {
-                        handle.report_healthy();
                         metrics::counter!(EVENTS_RECEIVED).increment(1);
 
                         if ctx.should_process(event.team_id) {
