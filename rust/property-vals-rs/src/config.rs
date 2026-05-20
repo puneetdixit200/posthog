@@ -67,6 +67,14 @@ pub struct Config {
     #[envconfig(default = "opt_out")]
     pub filter_mode: TeamFilterMode,
 
+    /// In `opt_out` mode, the percentage of teams (0-100) to process,
+    /// chosen by a stable hash of `team_id`. Lets us ramp gradually
+    /// without enumerating IDs: 1 → roughly 1% of teams, 100 → all teams.
+    /// Ignored when `filter_mode = opt_in` (the team list is the rollout
+    /// in that mode).
+    #[envconfig(default = "100")]
+    pub rollout_percentage: u8,
+
     #[envconfig(from = "BIND_HOST", default = "::")]
     pub host: String,
 

@@ -7321,6 +7321,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serve-metrics",
+ "siphasher 1.0.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
