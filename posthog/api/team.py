@@ -1686,6 +1686,7 @@ class TeamViewSet(TeamAndOrgViewSetMixin, AccessControlViewSetMixin, viewsets.Mo
     @action(
         methods=["GET", "PATCH"],
         detail=True,
+        # Only ADMIN or higher users are allowed to access this project
         permission_classes=[TeamMemberStrictManagementPermission],
         url_path="experiments_config",
     )
