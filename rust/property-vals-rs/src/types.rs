@@ -9,9 +9,7 @@ pub trait IngestableEvent: serde::de::DeserializeOwned + Send + Sync + 'static {
 
 /// One event coming from the `team_event_partitioned_events_json` Kafka topic.
 /// The `*_properties` fields are JSON-encoded strings on the wire; we parse
-/// them lazily during fan-out. The `groupN_properties` fields are kept on the
-/// struct for forward compatibility but are not populated by the plugin
-/// server today (see PR description for context).
+/// them lazily during fan-out.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Event {
     pub team_id: i64,
@@ -20,17 +18,6 @@ pub struct Event {
     pub properties: Option<String>,
     #[serde(default)]
     pub person_properties: Option<String>,
-
-    #[serde(default)]
-    pub group0_properties: Option<String>,
-    #[serde(default)]
-    pub group1_properties: Option<String>,
-    #[serde(default)]
-    pub group2_properties: Option<String>,
-    #[serde(default)]
-    pub group3_properties: Option<String>,
-    #[serde(default)]
-    pub group4_properties: Option<String>,
 }
 
 impl IngestableEvent for Event {

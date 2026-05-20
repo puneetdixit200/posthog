@@ -12,11 +12,14 @@ pub const MAX_PROPERTY_VALUE_LEN: usize = 256;
 
 /// Fan one Event out to its constituent property-value tuples.
 ///
-/// For each entry in `properties` / `person_properties` / `groupN_properties`:
+/// For each entry in `properties` / `person_properties`:
 ///   - drop entries whose JSON value is `null`
 ///   - coerce non-string values to their JSON string form (numbers, bools, etc.)
 ///   - drop entries with empty `property_key` or `property_key` longer than 400 chars
 ///   - drop entries with empty `property_value` or `property_value` 256+ chars
+///
+/// Group property values come from the `clickhouse_groups` topic via
+/// `fan_out_group`, not from this stream.
 pub fn fan_out(event: &Event) -> Vec<TupleKey> {
     let mut out = Vec::new();
 
@@ -25,21 +28,6 @@ pub fn fan_out(event: &Event) -> Vec<TupleKey> {
     }
     if let Some(raw) = &event.person_properties {
         emit_from_blob(event.team_id, PropertyType::Person, raw, &mut out);
-    }
-    if let Some(raw) = &event.group0_properties {
-        emit_from_blob(event.team_id, PropertyType::Group0, raw, &mut out);
-    }
-    if let Some(raw) = &event.group1_properties {
-        emit_from_blob(event.team_id, PropertyType::Group1, raw, &mut out);
-    }
-    if let Some(raw) = &event.group2_properties {
-        emit_from_blob(event.team_id, PropertyType::Group2, raw, &mut out);
-    }
-    if let Some(raw) = &event.group3_properties {
-        emit_from_blob(event.team_id, PropertyType::Group3, raw, &mut out);
-    }
-    if let Some(raw) = &event.group4_properties {
-        emit_from_blob(event.team_id, PropertyType::Group4, raw, &mut out);
     }
 
     out
@@ -116,11 +104,6 @@ mod tests {
             team_id: 2,
             properties: Some(properties.to_string()),
             person_properties: None,
-            group0_properties: None,
-            group1_properties: None,
-            group2_properties: None,
-            group3_properties: None,
-            group4_properties: None,
         }
     }
 
@@ -196,35 +179,12 @@ mod tests {
             team_id: 2,
             properties: None,
             person_properties: Some(r#"{"email":"foo@bar.com"}"#.to_string()),
-            group0_properties: None,
-            group1_properties: None,
-            group2_properties: None,
-            group3_properties: None,
-            group4_properties: None,
         };
         let tuples = fan_out(&ev);
         assert_eq!(tuples.len(), 1);
         assert_eq!(tuples[0].property_type, PropertyType::Person);
         assert_eq!(tuples[0].property_key, "email");
         assert_eq!(tuples[0].property_value, "foo@bar.com");
-    }
-
-    #[test]
-    fn group2_properties_emit_group_2_type() {
-        let ev = Event {
-            team_id: 2,
-            properties: None,
-            person_properties: None,
-            group0_properties: None,
-            group1_properties: None,
-            group2_properties: Some(r#"{"project":"posthog"}"#.to_string()),
-            group3_properties: None,
-            group4_properties: None,
-        };
-        let tuples = fan_out(&ev);
-        assert_eq!(tuples.len(), 1);
-        assert_eq!(tuples[0].property_type, PropertyType::Group2);
-        assert_eq!(tuples[0].property_value, "posthog");
     }
 
     #[test]
