@@ -7,6 +7,10 @@
             "minimum": 1,
             "type": "number"
         },
+        "offset": {
+            "description": "The initial index from which to return the results.",
+            "type": "number"
+        },
         "since": {
             "description": "ISO-8601 lower bound on `started_at`. Use to scope to a recent window.",
             "format": "date-time",
